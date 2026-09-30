@@ -85,13 +85,8 @@ section { margin: 0 0 56px; }
 
 .rise { animation: page-in 0.5s var(--ease) both; animation-delay: calc(var(--i, 0) * 30ms); }
 
-/* Sections below the fold fade up as they scroll into view. */
-.reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
-.reveal.in { opacity: 1; transform: none; }
-
 @media (prefers-reduced-motion: reduce) {
   .page, .rise { animation: none; }
-  .reveal { opacity: 1; transform: none; transition: none; }
   html { scroll-behavior: auto; }
 }
 
@@ -272,30 +267,32 @@ tbody tr.link:hover { background: var(--surface-hover); }
 
 /* ---------- Rune grid ---------- */
 
-.rune-pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin: 0 0 16px; }
+.rune-panel { background: var(--surface); border-radius: 10px; overflow: hidden; }
+
+.rune-pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); border-bottom: 1px solid var(--border); }
 
 .rune-page {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr 88px 72px;
   align-items: center;
   gap: 16px;
   padding: 16px;
-  background: var(--surface);
-  border: 1px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
   color: inherit;
   font: inherit;
   text-align: left;
-  transition: border-color 0.3s var(--ease), background 0.3s var(--ease);
 }
 
-.rune-page[aria-pressed="true"] { border-color: var(--accent); background: var(--surface-hover); }
+button.rune-page { cursor: pointer; opacity: 0.55; transition: opacity 0.3s var(--ease), border-color 0.3s var(--ease); }
+button.rune-page:hover { opacity: 0.8; }
+button.rune-page[aria-pressed="true"] { opacity: 1; border-bottom-color: var(--accent); }
 .rune-page .icons { flex-wrap: nowrap; gap: 10px; }
 .page-name strong { display: block; font-weight: 600; }
 .page-name small { color: var(--muted); font-size: 13px; }
 
-.rune-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; padding: 24px; background: var(--surface); border-radius: 10px; }
+.rune-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; padding: 24px; }
 
 .rune-tree h4 { margin: 0 0 16px; color: var(--muted); font: 500 13px var(--body); text-align: center; }
 

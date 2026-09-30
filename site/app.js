@@ -343,13 +343,13 @@ async function renderChampion(key, role, ticket) {
 
     <section>
       <h2>Runes</h2>
-      ${runePages.length ? `<div class="rune-pages">${runePages.map((p, i) => `<button class="rune-page" aria-pressed="${i === 0}" data-page="${i}">
+      ${runePages.length ? `<div class="rune-panel"><div class="rune-pages">${runePages.map((p, i) => `<${runePages.length > 1 ? `button aria-pressed="${i === 0}"` : "div"} class="rune-page" data-page="${i}">
         <div class="icons">${perkImg(db.runes.get(p.keystone_id)?.icon_path, p.keystone_name, "lg")}
           ${perkImg(db.trees.get(p.secondary_tree_id)?.icon_path, p.secondary_tree_name, "sm")}
           <div class="page-name"><strong>${esc(p.keystone_name)}</strong><small>${esc(p.primary_tree_name)} + ${esc(p.secondary_tree_name)}</small></div></div>
         ${figure(p.pick_share, p.games)}<div class="figure">${wr(p.win_rate)}</div>
-      </button>`).join("")}</div>
-      <div class="rune-slot">${board(runePages[0])}</div>`
+      </${runePages.length > 1 ? "button" : "div"}>`).join("")}</div>
+      <div class="rune-slot">${board(runePages[0])}</div></div>`
       : `<div class="panel"><div class="empty">No rune page has ${num(db.minGames)}+ games yet.</div></div>`}
     </section>
 
@@ -388,12 +388,11 @@ async function renderChampion(key, role, ticket) {
 
   const el = view.firstElementChild;
   current = { page: "champion", el };
-  reveal(el.querySelectorAll("section"));
   wireTabs(el);
   el.querySelector(".rune-pages")?.addEventListener("click", (e) => {
-    const button = e.target.closest(".rune-page");
+    const button = e.target.closest("button.rune-page");
     if (!button) return;
-    el.querySelectorAll(".rune-page").forEach((b) => b.setAttribute("aria-pressed", b === button));
+    el.querySelectorAll("button.rune-page").forEach((b) => b.setAttribute("aria-pressed", b === button));
     el.querySelector(".rune-slot").innerHTML = board(runePages[button.dataset.page]);
   });
   window.scrollTo({ top: 0 });
@@ -402,21 +401,6 @@ async function renderChampion(key, role, ticket) {
 function renderNotFound(message = "That page doesn't exist.") {
   current = null;
   view.innerHTML = `<div class="page hero"><h1>Not found</h1><p>${esc(message)}</p><p><a class="good" href="#/">Back to the tier list</a></p></div>`;
-}
-
-// Sections fade up as they scroll into view.
-const observer = "IntersectionObserver" in window && new IntersectionObserver((entries) => {
-  for (const entry of entries) {
-    if (entry.isIntersecting) {
-      entry.target.classList.add("in");
-      observer.unobserve(entry.target);
-    }
-  }
-}, { rootMargin: "0px 0px -10% 0px" });
-
-function reveal(elements) {
-  if (!observer) return;
-  elements.forEach((e) => { e.classList.add("reveal"); observer.observe(e); });
 }
 
 // ---------- Router ----------
