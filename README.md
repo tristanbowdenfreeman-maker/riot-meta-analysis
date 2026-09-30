@@ -43,4 +43,12 @@ python -m riot_meta export            # mart views -> site/data/*.json
 python -m riot_meta status            # row counts at every stage
 ```
 
+To keep growing the sample, `scripts/collect.sh` repeats queue, fetch, fetch-timelines,
+transform, check and export in rounds of 1,000 matches until stopped, finding more players as
+needed and waiting for a new key in `.env` when the old one expires:
+
+```bash
+nohup caffeinate -i scripts/collect.sh > collect.log 2>&1 &
+```
+
 `pytest` runs the unit tests.

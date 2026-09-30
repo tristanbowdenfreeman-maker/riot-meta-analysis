@@ -42,7 +42,8 @@ def cmd_queue(settings, args):
     since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     with connect(settings) as conn:
         pipeline.queue_matches(
-            _client(settings), conn, args.target, int(since.timestamp()), args.per_player, args.seed, settings.platform
+            _client(settings), conn, args.target, int(since.timestamp()), args.per_player, args.seed, settings.platform,
+            args.more,
         )
 
 
@@ -127,6 +128,7 @@ def main() -> None:
     p = sub.add_parser("queue", help="queue ranked match IDs from discovered players")
     p.add_argument("--since", required=True, help="only matches from this date (UTC), e.g. the patch release date")
     p.add_argument("--target", type=int, default=3000, help="stop once the queue holds this many matches")
+    p.add_argument("--more", type=int, help="queue this many more matches than the queue holds now")
     p.add_argument("--per-player", type=int, default=5, help="max matches taken from each player")
     p.add_argument("--seed", type=int, default=42, help="random seed for the player order")
     p.set_defaults(func=cmd_queue)

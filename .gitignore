@@ -13,3 +13,6 @@ __pycache__/
 # macOS
 .DS_Store
 *.egg-info/
+
+# Background collection log
+*.log

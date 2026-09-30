@@ -54,10 +54,11 @@ def discover(client: RiotClient, conn, pages_per_division: int) -> int:
 
 
 def queue_matches(
-    client: RiotClient, conn, target: int, since_epoch: int, per_player: int, seed: int, platform: str
+    client: RiotClient, conn, target: int | None, since_epoch: int, per_player: int, seed: int, platform: str,
+    more: int | None = None,
 ) -> int:
     """Visit players in a seeded random order, queueing up to `per_player` of their ranked matches
-    played since `since_epoch`, until the queue holds `target` matches.
+    played since `since_epoch`, until the queue holds `target` matches (or `more` than it holds now).
 
     A player's history covers every server in the region (EUW, EUNE, TR, RU), so only match IDs
     from `platform` (e.g. EUW1_...) are queued."""
@@ -65,6 +66,8 @@ def queue_matches(
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM stg.match_queue WHERE status <> 'failed' AND match_id LIKE %s", (prefix + "%",))
     queued = cursor.fetchone()[0]
+    if more is not None:
+        target = queued + more
 
     cursor.execute("SELECT puuid, tier FROM stg.player WHERE match_ids_fetched_at IS NULL ORDER BY puuid")
     players = cursor.fetchall()
@@ -90,6 +93,8 @@ def queue_matches(
             print(f"  {visited} players visited, {queued}/{target} matches queued")
 
     print(f"  queue holds {queued} matches")
+    if queued < target:
+        print("  ran out of players: run discover with more pages to find more")
     return queued
 
 
