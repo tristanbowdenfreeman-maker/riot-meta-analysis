@@ -173,15 +173,25 @@ GO
 
 -- Starter sets: everything bought (and kept) in the first 90 seconds, except the trinket.
 -- starter_items lists item_id:quantity pairs, e.g. '1055:1,2003:1' = Doran's Blade + Health Potion.
+-- The game gives each support a free World Atlas (3865) at 0:00. The timeline logs that grant
+-- under participant 0 rather than the support, so it is added here for every UTILITY player.
 CREATE OR ALTER VIEW mart.v_champion_starter_sets
 AS
-WITH starter_item AS (
-    SELECT ip.match_id, ip.participant_id, ip.item_id, COUNT(*) AS quantity
+WITH starter_purchase AS (
+    SELECT ip.match_id, ip.participant_id, ip.item_id
     FROM mart.v_item_purchase AS ip
     LEFT JOIN dim.item AS d ON d.item_id = ip.item_id
     WHERE ip.timestamp_ms < 90000
       AND ISNULL(d.item_class, '') <> 'Trinket'
-    GROUP BY ip.match_id, ip.participant_id, ip.item_id
+    UNION ALL
+    SELECT tp.match_id, tp.participant_id, 3865
+    FROM mart.v_timeline_participant AS tp
+    WHERE tp.role = 'UTILITY'
+),
+starter_item AS (
+    SELECT match_id, participant_id, item_id, COUNT(*) AS quantity
+    FROM starter_purchase
+    GROUP BY match_id, participant_id, item_id
 ),
 starter_set AS (
     SELECT match_id, participant_id,
@@ -293,7 +303,8 @@ WHERE o.item_number <= 6
 GROUP BY tp.patch, tp.champion_id, tp.role, o.item_number, o.item_id;
 GO
 
--- Keystone plus primary/secondary tree combinations.
+-- Rune pages: keystone plus primary/secondary tree combinations. page_rank 1 is the most played
+-- (ties broken by id so the ranking is stable); the rune grid below covers pages 1 and 2.
 CREATE OR ALTER VIEW mart.v_champion_rune_stats
 AS
 SELECT m.patch,
@@ -309,7 +320,9 @@ SELECT m.patch,
        SUM(CAST(p.win AS INT))                                  AS wins,
        CAST(SUM(CAST(p.win AS INT)) AS FLOAT) / COUNT(*)        AS win_rate,
        CAST(COUNT(*) AS FLOAT)
-           / SUM(COUNT(*)) OVER (PARTITION BY m.patch, p.champion_id, p.team_position) AS pick_share
+           / SUM(COUNT(*)) OVER (PARTITION BY m.patch, p.champion_id, p.team_position) AS pick_share,
+       ROW_NUMBER() OVER (PARTITION BY m.patch, p.champion_id, p.team_position
+                          ORDER BY COUNT(*) DESC, p.keystone_id, p.secondary_tree_id)  AS page_rank
 FROM mart.v_valid_match AS m
 JOIN fact.match_participant AS p ON p.match_id = m.match_id
 LEFT JOIN dim.rune AS k       ON k.rune_id = p.keystone_id
@@ -320,46 +333,61 @@ GROUP BY m.patch, p.champion_id, p.team_position, p.keystone_id, k.rune_name,
          p.primary_tree_id, t1.tree_name, p.secondary_tree_id, t2.tree_name;
 GO
 
--- Every individual rune, for the rune-page grid: how often each one is taken and its win rate.
+-- Players on each champion's two most played rune pages, for the rune grid and shards below.
+CREATE OR ALTER VIEW mart.v_rune_page_player
+AS
+SELECT rs.patch, rs.champion_id, rs.role, rs.page_rank, rs.games AS page_games,
+       p.match_id, p.participant_id, p.win, p.shard_offense_id, p.shard_flex_id, p.shard_defense_id
+FROM mart.v_champion_rune_stats AS rs
+JOIN mart.v_valid_match AS m ON m.patch = rs.patch
+JOIN fact.match_participant AS p
+  ON p.match_id = m.match_id
+ AND p.champion_id = rs.champion_id
+ AND p.team_position = rs.role
+ AND p.keystone_id = rs.keystone_id
+ AND p.primary_tree_id = rs.primary_tree_id
+ AND p.secondary_tree_id = rs.secondary_tree_id
+WHERE rs.page_rank <= 2;
+GO
+
+-- Every rune on a rune page, for the rune grid: how often players on that page take it, and its
+-- win rate. pick_share is out of the page's games, so each row of the grid adds up to 1.
 CREATE OR ALTER VIEW mart.v_champion_rune_picks
 AS
-SELECT m.patch,
-       p.champion_id,
-       p.team_position                                          AS role,
+SELECT pp.patch,
+       pp.champion_id,
+       pp.role,
+       pp.page_rank,
        r.rune_id,
        r.tree_id,
        r.is_primary_tree,
        COUNT(*)                                                 AS games,
-       SUM(CAST(p.win AS INT))                                  AS wins,
-       CAST(SUM(CAST(p.win AS INT)) AS FLOAT) / COUNT(*)        AS win_rate,
-       CAST(COUNT(*) AS FLOAT) / MAX(cr.games)                  AS pick_share
-FROM mart.v_valid_match AS m
-JOIN fact.match_participant AS p ON p.match_id = m.match_id
-JOIN fact.participant_rune AS r ON r.match_id = p.match_id AND r.participant_id = p.participant_id
-JOIN mart.v_champion_role_stats AS cr
-  ON cr.patch = m.patch AND cr.champion_id = p.champion_id AND cr.role = p.team_position
-GROUP BY m.patch, p.champion_id, p.team_position, r.rune_id, r.tree_id, r.is_primary_tree;
+       SUM(CAST(pp.win AS INT))                                 AS wins,
+       CAST(SUM(CAST(pp.win AS INT)) AS FLOAT) / COUNT(*)       AS win_rate,
+       CAST(COUNT(*) AS FLOAT) / MAX(pp.page_games)             AS pick_share
+FROM mart.v_rune_page_player AS pp
+JOIN fact.participant_rune AS r ON r.match_id = pp.match_id AND r.participant_id = pp.participant_id
+GROUP BY pp.patch, pp.champion_id, pp.role, pp.page_rank, r.rune_id, r.tree_id, r.is_primary_tree;
 GO
 
--- Stat shards by row (1 = offense, 2 = flex, 3 = defense).
+-- Stat shards on each rune page, by row (1 = offense, 2 = flex, 3 = defense).
 CREATE OR ALTER VIEW mart.v_champion_shard_picks
 AS
-SELECT m.patch,
-       p.champion_id,
-       p.team_position                                          AS role,
+SELECT pp.patch,
+       pp.champion_id,
+       pp.role,
+       pp.page_rank,
        s.shard_row,
        s.shard_id,
        COUNT(*)                                                 AS games,
-       SUM(CAST(p.win AS INT))                                  AS wins,
-       CAST(SUM(CAST(p.win AS INT)) AS FLOAT) / COUNT(*)        AS win_rate,
+       SUM(CAST(pp.win AS INT))                                 AS wins,
+       CAST(SUM(CAST(pp.win AS INT)) AS FLOAT) / COUNT(*)       AS win_rate,
        CAST(COUNT(*) AS FLOAT)
-           / SUM(COUNT(*)) OVER (PARTITION BY m.patch, p.champion_id, p.team_position, s.shard_row) AS pick_share
-FROM mart.v_valid_match AS m
-JOIN fact.match_participant AS p ON p.match_id = m.match_id
-CROSS APPLY (VALUES (1, p.shard_offense_id), (2, p.shard_flex_id), (3, p.shard_defense_id)) AS s (shard_row, shard_id)
-WHERE p.team_position IS NOT NULL
-  AND s.shard_id IS NOT NULL
-GROUP BY m.patch, p.champion_id, p.team_position, s.shard_row, s.shard_id;
+           / SUM(COUNT(*)) OVER (PARTITION BY pp.patch, pp.champion_id, pp.role, pp.page_rank, s.shard_row) AS pick_share
+FROM mart.v_rune_page_player AS pp
+CROSS APPLY (VALUES (1, pp.shard_offense_id), (2, pp.shard_flex_id), (3, pp.shard_defense_id)) AS s (shard_row, shard_id)
+WHERE s.shard_id IS NOT NULL
+GROUP BY pp.patch, pp.champion_id, pp.role, pp.page_rank, s.shard_row, s.shard_id;
 GO
 
 -- Summoner spell pairs. Flash on D and on F count as the same pair.
@@ -416,14 +444,14 @@ GO
 -- Tier list. Champions are ranked within each role by an adjusted win rate that adds 50 wins
 -- and 50 losses to their record, which pulls small samples towards 50%: 18-12 (60%) becomes
 -- 68-62 (52.3%), while 159-141 (53%) only moves to 52.3%. Tiers are cut by rank within the role.
--- Only champion/role pairs picked in at least 0.5% of matches and making up at least 10% of
+-- Only champion/role pairs picked in at least 1% of matches and making up at least 10% of
 -- the champion's games are ranked; the rest get no tier.
 CREATE OR ALTER VIEW mart.v_tier_list
 AS
 WITH scored AS (
     SELECT r.*,
            (r.wins + 50.0) / (r.games + 100.0) AS adjusted_win_rate,
-           CASE WHEN r.pick_rate >= 0.005 AND r.role_share >= 0.10 THEN 1 ELSE 0 END AS is_ranked
+           CASE WHEN r.pick_rate >= 0.01 AND r.role_share >= 0.10 THEN 1 ELSE 0 END AS is_ranked
     FROM mart.v_champion_role_stats AS r
 ),
 ranked AS (

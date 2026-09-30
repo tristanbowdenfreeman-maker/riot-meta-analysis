@@ -314,12 +314,16 @@ tbody tr.link:hover { background: var(--surface-hover); }
 .rune.keystone img { width: 52px; height: 52px; }
 .rune.off { opacity: 0.35; filter: grayscale(1); }
 .rune .games { color: var(--faint); }
+.legend { grid-column: 1 / -1; margin: 0; color: var(--faint); font-size: 12px; text-align: center; }
 
 /* ---------- Footer ---------- */
 
 .footer { padding-top: 48px; padding-bottom: 48px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--border); margin-top: 32px; }
 .footer a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .footer .legal { color: var(--faint); font-size: 12px; }
+
+.method { max-width: 640px; margin: 16px 0 0; color: var(--faint); font-size: 13px; }
+.method.sample { margin: -32px 0 48px; }
 
 .loading { padding: 120px 0; color: var(--muted); text-align: center; }
 

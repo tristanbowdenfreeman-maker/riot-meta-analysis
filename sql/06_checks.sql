@@ -39,6 +39,37 @@ SELECT 'loaded timelines with no purchases', 1,
         WHERE NOT EXISTS (SELECT 1 FROM fact.item_event AS e
                           WHERE e.match_id = t.match_id AND e.event_type = 'ITEM_PURCHASED'))
 UNION ALL
+SELECT 'rune pages whose grid rows do not add up to the page games', 1,
+       (SELECT COUNT(*) FROM (
+            SELECT rp.patch, rp.champion_id, rp.role, rp.page_rank, r.tree_id, r.slot_index
+            FROM mart.v_champion_rune_picks AS rp
+            JOIN dim.rune AS r ON r.rune_id = rp.rune_id
+            JOIN mart.v_champion_rune_stats AS rs
+              ON rs.patch = rp.patch AND rs.champion_id = rp.champion_id
+             AND rs.role = rp.role AND rs.page_rank = rp.page_rank
+            WHERE rp.is_primary_tree = 1
+            GROUP BY rp.patch, rp.champion_id, rp.role, rp.page_rank, r.tree_id, r.slot_index, rs.games
+            HAVING SUM(rp.games) <> rs.games) AS x)
+UNION ALL
+SELECT 'tier list roles whose games are not 2 per match', 0,
+       (SELECT COUNT(*) FROM (
+            SELECT r.patch, r.role FROM mart.v_champion_role_stats AS r
+            JOIN mart.v_patch_summary AS t ON t.patch = r.patch
+            GROUP BY r.patch, r.role, t.matches
+            HAVING SUM(r.games) <> 2 * t.matches) AS x)
+UNION ALL
+-- Seraph's Embrace, Muramana and Fimbulwinter are never bought: Archangel's Staff, Manamune
+-- and Winter's Approach turn into them once stacked, so the purchase is of the earlier item.
+SELECT 'completed items in the final inventory never bought in the timeline', 0,
+       (SELECT COUNT(*) FROM fact.participant_item AS i
+        JOIN fact.match_timeline AS t ON t.match_id = i.match_id
+        JOIN dim.item AS d ON d.item_id = i.item_id
+        WHERE d.item_class = 'Completed'
+          AND i.item_id NOT IN (3040, 3042, 3121)
+          AND NOT EXISTS (SELECT 1 FROM mart.v_item_purchase AS ip
+                          WHERE ip.match_id = i.match_id AND ip.participant_id = i.participant_id
+                            AND ip.item_id = i.item_id))
+UNION ALL
 SELECT 'valid matches without a timeline', 0,
        (SELECT COUNT(*) FROM mart.v_valid_match AS m
         WHERE NOT EXISTS (SELECT 1 FROM fact.match_timeline AS t WHERE t.match_id = m.match_id))

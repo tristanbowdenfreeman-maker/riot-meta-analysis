@@ -55,11 +55,13 @@ over clever ones.
   starter set, a core build). For item numbers, it's the share of players who reached that number.
 - **Keystone**: the first rune in the primary rune tree.
 - **Stat shards**: the three small bonuses under the rune trees (offense, flex, defense rows).
+- **Rune page**: a keystone plus a secondary tree. The rune grid and shards on the website are
+  shown for each of a champion's two most played pages, out of that page's games.
 - **Adjusted win rate**: (wins + 50) / (games + 100). Adding 50 wins and 50 losses pulls small
   samples towards 50%, so a lucky 18-12 doesn't outrank a solid 159-141.
 - **Tier**: rank by adjusted win rate within a role, cut by percentile: OP (top 5%), 1 (next 15%),
   2 (next 25%), 3 (next 30%), 4 (next 17%), 5 (bottom 8%). Only champion/role pairs with a pick
-  rate of at least 0.5% that make up at least 10% of the champion's games get a tier.
+  rate of at least 1% (30 games at 3,000 matches) that make up at least 10% of the champion's games get a tier.
 
 ## Layers
 
@@ -82,8 +84,11 @@ The website (`site/`) reads the `mart` views as JSON; see [ADR 0006](docs/adr/00
 - Sample tier is one label per match, not each player's own rank.
 - Final-inventory item stats favour items bought in longer games; the build-order views don't.
 - Supports' starting World Atlas is granted by the game with no player attached
-  (`participantId` 0), so support starter sets only show what the player bought themselves.
+  (`participantId` 0). The starter-set view adds it for every support, which the timelines back
+  up: each support later destroys a World Atlas under their own id when it upgrades.
+- Seraph's Embrace, Muramana and Fimbulwinter are never bought (they transform from Archangel's
+  Staff, Manamune and Winter's Approach), so build order shows the item that was bought.
 - If a player buys the same item twice and then undoes both purchases, the first purchase is
   still counted. This only happens with consumables.
-- Win rates on small samples are noisy; the website hides rows below a minimum-games cutoff
-  (50 games at 3,000 matches, raised at 30,000).
+- Win rates on small samples are noisy. The website hides build, rune and matchup options with
+  fewer than 1 game per 300 matches (minimum 10: 10 games at 3,000 matches, 100 at 30,000).
