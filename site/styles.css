@@ -225,7 +225,6 @@ tbody tr.link:hover { background: var(--surface-hover); }
 .stat .value { font: 32px/1.2 var(--display); letter-spacing: 0.02em; }
 
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
-.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; }
 
 .panel { background: var(--surface); border-radius: 10px; overflow: hidden; }
 .option {
@@ -333,6 +332,9 @@ button.rune-page[aria-pressed="true"] { opacity: 1; border-bottom-color: var(--a
   td { font-size: 14px; }
   .champ-cell { gap: 8px; font-size: 14px; }
   .champ-cell .icon { width: 28px; height: 28px; }
+  .option { grid-template-columns: 1fr 76px 60px; gap: 10px; }
+  .option .icons { gap: 4px; }
+  .option .icon { width: 30px; height: 30px; }
   .rune-page { grid-template-columns: 1fr auto auto; gap: 12px; padding: 12px; }
   .rune-page .icons > img:nth-child(2), .page-name small { display: none; }
   .rune-board { padding: 16px 8px; }

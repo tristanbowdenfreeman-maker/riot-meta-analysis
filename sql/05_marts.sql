@@ -2,13 +2,15 @@
 -- The website reads these (via the JSON export) and applies its own minimum-games cutoff.
 -- pick_share columns are shares of the champion's games in that role.
 
--- Matches that count towards the stats.
+-- Matches that count towards the stats: EUW ranked solo/duo, no remakes. EUW players' histories
+-- also hold games on other European servers (EUN1_, TR1_, RU_), which are out of scope.
 CREATE OR ALTER VIEW mart.v_valid_match
 AS
 SELECT match_id, patch, game_start_utc, duration_s, sample_tier
 FROM fact.match
 WHERE queue_id = 420
-  AND is_remake = 0;
+  AND is_remake = 0
+  AND match_id LIKE 'EUW1[_]%';
 GO
 
 -- Denominators: pick and ban rates are shares of all valid matches in the patch.
@@ -283,24 +285,38 @@ JOIN base AS b ON b.patch = tp.patch AND b.champion_id = tp.champion_id AND b.ro
 GROUP BY tp.patch, tp.champion_id, tp.role, c.item1_id, c.item2_id, c.item3_id;
 GO
 
--- Which item players build as their 1st, 2nd ... 6th completed item. pick_share here is the
--- share of players who reached that item number, so each item_number's rows add up to 1.
-CREATE OR ALTER VIEW mart.v_champion_item_slots
+-- Late items: completed items built 4th, 5th or 6th, in one list. Games average under 30 minutes,
+-- so few players reach a 5th or 6th item and a separate list per slot would be mostly empty.
+-- pick_share is the share of the champion's players who reached a 4th item that built this item
+-- 4th to 6th. A player can build up to three late items, so the shares add up to between 1 and 3.
+DROP VIEW IF EXISTS mart.v_champion_item_slots;
+GO
+
+CREATE OR ALTER VIEW mart.v_champion_late_items
 AS
-SELECT tp.patch,
-       tp.champion_id,
-       tp.role,
-       o.item_number,
-       o.item_id,
-       COUNT(*)                                             AS games,
-       SUM(CAST(tp.win AS INT))                             AS wins,
-       CAST(SUM(CAST(tp.win AS INT)) AS FLOAT) / COUNT(*)   AS win_rate,
-       CAST(COUNT(*) AS FLOAT)
-           / SUM(COUNT(*)) OVER (PARTITION BY tp.patch, tp.champion_id, tp.role, o.item_number) AS pick_share
-FROM mart.v_timeline_participant AS tp
-JOIN mart.v_completed_item_order AS o ON o.match_id = tp.match_id AND o.participant_id = tp.participant_id
-WHERE o.item_number <= 6
-GROUP BY tp.patch, tp.champion_id, tp.role, o.item_number, o.item_id;
+WITH late AS (
+    SELECT tp.patch, tp.champion_id, tp.role, tp.win, o.item_id, o.item_number
+    FROM mart.v_timeline_participant AS tp
+    JOIN mart.v_completed_item_order AS o ON o.match_id = tp.match_id AND o.participant_id = tp.participant_id
+    WHERE o.item_number BETWEEN 4 AND 6
+),
+reached AS (
+    SELECT patch, champion_id, role, COUNT(*) AS players
+    FROM late
+    WHERE item_number = 4
+    GROUP BY patch, champion_id, role
+)
+SELECT l.patch,
+       l.champion_id,
+       l.role,
+       l.item_id,
+       COUNT(*)                                            AS games,
+       SUM(CAST(l.win AS INT))                             AS wins,
+       CAST(SUM(CAST(l.win AS INT)) AS FLOAT) / COUNT(*)   AS win_rate,
+       CAST(COUNT(*) AS FLOAT) / r.players                 AS pick_share
+FROM late AS l
+JOIN reached AS r ON r.patch = l.patch AND r.champion_id = l.champion_id AND r.role = l.role
+GROUP BY l.patch, l.champion_id, l.role, l.item_id, r.players;
 GO
 
 -- Rune pages: keystone plus primary/secondary tree combinations. page_rank 1 is the most played

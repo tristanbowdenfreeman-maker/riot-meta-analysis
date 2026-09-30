@@ -18,7 +18,7 @@ Views then:
 
 - drop purchases that were undone (`mart.v_item_purchase`),
 - number each player's completed items by first purchase (`mart.v_completed_item_order`),
-- build starter sets, first boots, core builds and item slots from those.
+- build starter sets, first boots, core builds and late items from those (see [0008](0008-one-late-items-list.md)).
 
 ## Consequences
 

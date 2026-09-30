@@ -26,8 +26,10 @@ over clever ones.
 - **Player record** (or participant): one player in one match, so every match has 10. This is the
   grain of `fact.match_participant`.
 - **Patch**: the first two parts of the game version, e.g. game version `16.19.712.3456` is patch `16.19`.
-- **Valid match**: a ranked solo/duo match lasting at least 5 minutes. Shorter games are
-  **remakes** and are left out of every statistic.
+- **Valid match**: a ranked solo/duo match on EUW lasting at least 5 minutes. Shorter games are
+  **remakes** and are left out of every statistic. A player's match history also holds games on
+  the other European servers (EUNE, TR, RU; about 1 in 200 matches); those are not queued and the
+  valid-match view leaves them out.
 - **Role**: Riot's `teamPosition`: TOP, JUNGLE, MIDDLE, BOTTOM or UTILITY (support).
 - **Sample tier**: the tier of the player whose match history the match was taken from. The API
   does not report each player's rank inside a match, so this is the rank label for the whole match.
@@ -86,8 +88,10 @@ The website (`site/`) reads the `mart` views as JSON; see [ADR 0006](docs/adr/00
 - Supports' starting World Atlas is granted by the game with no player attached
   (`participantId` 0). The starter-set view adds it for every support, which the timelines back
   up: each support later destroys a World Atlas under their own id when it upgrades.
-- Seraph's Embrace, Muramana and Fimbulwinter are never bought (they transform from Archangel's
-  Staff, Manamune and Winter's Approach), so build order shows the item that was bought.
+- Some completed items are never bought because an earlier item turns into them: Seraph's
+  Embrace, Muramana and Fimbulwinter (from Archangel's Staff, Manamune and Winter's Approach),
+  Gunmetal Greaves (Berserker's Greaves' upgrade) and Diadem of Songs (the finished support quest).
+  Build order shows the item that was bought.
 - If a player buys the same item twice and then undoes both purchases, the first purchase is
   still counted. This only happens with consumables.
 - Win rates on small samples are noisy. The website hides build, rune and matchup options with

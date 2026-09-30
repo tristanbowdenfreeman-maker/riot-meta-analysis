@@ -53,11 +53,17 @@ def discover(client: RiotClient, conn, pages_per_division: int) -> int:
     return total
 
 
-def queue_matches(client: RiotClient, conn, target: int, since_epoch: int, per_player: int, seed: int) -> int:
+def queue_matches(
+    client: RiotClient, conn, target: int, since_epoch: int, per_player: int, seed: int, platform: str
+) -> int:
     """Visit players in a seeded random order, queueing up to `per_player` of their ranked matches
-    played since `since_epoch`, until the queue holds `target` matches."""
+    played since `since_epoch`, until the queue holds `target` matches.
+
+    A player's history covers every server in the region (EUW, EUNE, TR, RU), so only match IDs
+    from `platform` (e.g. EUW1_...) are queued."""
+    prefix = f"{platform.upper()}_"
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM stg.match_queue WHERE status <> 'failed'")
+    cursor.execute("SELECT COUNT(*) FROM stg.match_queue WHERE status <> 'failed' AND match_id LIKE %s", (prefix + "%",))
     queued = cursor.fetchone()[0]
 
     cursor.execute("SELECT puuid, tier FROM stg.player WHERE match_ids_fetched_at IS NULL ORDER BY puuid")
@@ -68,6 +74,8 @@ def queue_matches(client: RiotClient, conn, target: int, since_epoch: int, per_p
         if queued >= target:
             break
         for match_id in client.match_ids(puuid, since_epoch, per_player):
+            if not match_id.startswith(prefix):
+                continue
             cursor.execute(
                 """
                 INSERT INTO stg.match_queue (match_id, source_puuid, source_tier)

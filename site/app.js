@@ -294,8 +294,8 @@ async function renderChampion(key, role, ticket) {
   const roles = allRoles.filter((r) => r.tier != null || r.role === role);
 
   view.innerHTML = `<div class="loading">Loading ${esc(champ.champion_name)}…</div>`;
-  const [starters, boots, cores, slots, pages, runePicks, shardPicks, spells] = await Promise.all(
-    ["champion_starter_sets", "champion_boots", "champion_core_builds", "champion_item_slots",
+  const [starters, boots, cores, late, pages, runePicks, shardPicks, spells] = await Promise.all(
+    ["champion_starter_sets", "champion_boots", "champion_core_builds", "champion_late_items",
      "champion_rune_stats", "champion_rune_picks", "champion_shard_picks", "champion_spell_stats"].map(load),
   );
   if (ticket !== navigation) return;  // the reader has already moved on
@@ -306,9 +306,6 @@ async function renderChampion(key, role, ticket) {
   const board = (page) => runeBoard(page,
     mine(runePicks).filter((p) => p.page_rank === page.page_rank),
     mine(shardPicks).filter((s) => s.page_rank === page.page_rank));
-
-  const slotPanels = [[4, "Fourth item"], [5, "Fifth item"], [6, "Sixth item"]].map(([n, title]) =>
-    optionPanel(title, top(mine(slots).filter((s) => s.item_number === n), 5), (r) => itemImg(r.item_id))).join("");
 
   const opponent = (r) => {
     const o = db.champions.get(r.opponent_id);
@@ -374,7 +371,8 @@ async function renderChampion(key, role, ticket) {
 
     <section>
       <h2>Late items</h2>
-      <div class="grid-3">${slotPanels}</div>
+      ${optionPanel("Built 4th to 6th", top(mine(late), 5), (r) => itemImg(r.item_id), ["Built by", "Win rate"])}
+      <p class="method">Built by: share of players who reached a 4th item that built it 4th, 5th or 6th.</p>
     </section>
 
     <section>

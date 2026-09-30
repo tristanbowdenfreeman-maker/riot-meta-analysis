@@ -58,14 +58,16 @@ SELECT 'tier list roles whose games are not 2 per match', 0,
             GROUP BY r.patch, r.role, t.matches
             HAVING SUM(r.games) <> 2 * t.matches) AS x)
 UNION ALL
--- Seraph's Embrace, Muramana and Fimbulwinter are never bought: Archangel's Staff, Manamune
--- and Winter's Approach turn into them once stacked, so the purchase is of the earlier item.
+-- Some completed items are never bought because an earlier item turns into them: Seraph's Embrace,
+-- Muramana and Fimbulwinter (Archangel's Staff, Manamune and Winter's Approach once stacked),
+-- Gunmetal Greaves (Berserker's Greaves' upgrade) and Diadem of Songs (the finished support quest).
+-- The build stats count the purchase of the earlier item.
 SELECT 'completed items in the final inventory never bought in the timeline', 0,
        (SELECT COUNT(*) FROM fact.participant_item AS i
         JOIN fact.match_timeline AS t ON t.match_id = i.match_id
         JOIN dim.item AS d ON d.item_id = i.item_id
         WHERE d.item_class = 'Completed'
-          AND i.item_id NOT IN (3040, 3042, 3121)
+          AND i.item_id NOT IN (3040, 3042, 3121, 3172, 2530)
           AND NOT EXISTS (SELECT 1 FROM mart.v_item_purchase AS ip
                           WHERE ip.match_id = i.match_id AND ip.participant_id = i.participant_id
                             AND ip.item_id = i.item_id))

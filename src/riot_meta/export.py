@@ -22,7 +22,7 @@ MART_VIEWS = [
     "v_champion_starter_sets",
     "v_champion_boots",
     "v_champion_core_builds",
-    "v_champion_item_slots",
+    "v_champion_late_items",
     "v_champion_rune_stats",
     "v_champion_rune_picks",
     "v_champion_shard_picks",
@@ -57,3 +57,10 @@ def export_marts(settings: Settings) -> None:
     meta = {"ddragon_version": ddragon_version, "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     (EXPORT_DIR / "meta.json").write_text(json.dumps(meta))
     print(f"  {(EXPORT_DIR / 'meta.json').relative_to(PROJECT_ROOT)}")
+
+    # Remove files from views that are no longer exported, so the site never reads stale data.
+    current = {v.removeprefix("v_") for v in MART_VIEWS} | set(LOOKUPS) | {"meta"}
+    for path in EXPORT_DIR.glob("*.json"):
+        if path.stem not in current:
+            path.unlink()
+            print(f"  removed stale {path.relative_to(PROJECT_ROOT)}")

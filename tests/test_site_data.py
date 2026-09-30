@@ -35,7 +35,7 @@ def matches():
 
 STAT_FILES = [
     "tier_list", "champion_matchups", "champion_item_stats", "champion_starter_sets", "champion_boots",
-    "champion_core_builds", "champion_item_slots", "champion_rune_stats", "champion_rune_picks",
+    "champion_core_builds", "champion_late_items", "champion_rune_stats", "champion_rune_picks",
     "champion_shard_picks", "champion_spell_stats",
 ]
 
@@ -69,7 +69,7 @@ def test_every_id_the_site_shows_has_a_lookup_row():
             assert item_id in items and quantity > 0, row
     for row in load("champion_core_builds"):
         assert {row["item1_id"], row["item2_id"], row["item3_id"]} <= items, row
-    for name in ("champion_boots", "champion_item_slots", "champion_item_stats"):
+    for name in ("champion_boots", "champion_late_items", "champion_item_stats"):
         assert {r["item_id"] for r in load(name)} <= items, name
     for row in load("champion_rune_stats"):
         assert row["keystone_id"] in runes and {row["primary_tree_id"], row["secondary_tree_id"]} <= trees, row
@@ -110,7 +110,6 @@ def test_matchups_mirror_each_other():
     ("champion_rune_stats", ()),
     ("champion_spell_stats", ()),
     ("champion_shard_picks", ("page_rank", "shard_row")),
-    ("champion_item_slots", ("item_number",)),
 ])
 def test_pick_shares_add_up_to_one(name, group):
     totals = defaultdict(float)
@@ -118,6 +117,16 @@ def test_pick_shares_add_up_to_one(name, group):
         totals[(row["champion_id"], row["role"], *(row[g] for g in group))] += row["pick_share"]
     for key, total in totals.items():
         assert total == pytest.approx(1, abs=TOLERANCE * 10), (name, key)
+
+
+def test_late_item_shares_add_up_to_one_to_three_items():
+    # Every player who reached a 4th item built one to three items 4th to 6th.
+    totals = defaultdict(float)
+    for row in load("champion_late_items"):
+        totals[(row["champion_id"], row["role"])] += row["pick_share"]
+    assert totals
+    for key, total in totals.items():
+        assert 1 - TOLERANCE * 10 <= total <= 3 + TOLERANCE * 10, key
 
 
 def test_rune_grid_rows_add_up_to_the_page():

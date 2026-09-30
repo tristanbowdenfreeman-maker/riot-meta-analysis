@@ -41,7 +41,9 @@ def cmd_discover(settings, args):
 def cmd_queue(settings, args):
     since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     with connect(settings) as conn:
-        pipeline.queue_matches(_client(settings), conn, args.target, int(since.timestamp()), args.per_player, args.seed)
+        pipeline.queue_matches(
+            _client(settings), conn, args.target, int(since.timestamp()), args.per_player, args.seed, settings.platform
+        )
 
 
 def cmd_fetch(settings, args):
