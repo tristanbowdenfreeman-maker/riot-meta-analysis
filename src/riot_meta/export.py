@@ -16,17 +16,25 @@ EXPORT_DIR = PROJECT_ROOT / "site" / "data"
 MART_VIEWS = [
     "v_patch_summary",
     "v_sample_by_tier",
+    "v_data_volume",
     "v_tier_list",
     "v_champion_matchups",
-    "v_champion_item_stats",
     "v_champion_starter_sets",
     "v_champion_boots",
-    "v_champion_core_builds",
+    "v_champion_core_items",
     "v_champion_late_items",
     "v_champion_rune_stats",
     "v_champion_rune_picks",
     "v_champion_shard_picks",
     "v_champion_spell_stats",
+    "v_role_win_gap",
+    "v_ban_vs_win",
+    "v_ban_band_win_rate",
+    "v_side_win_rate",
+    "v_objective_win_rate",
+    "v_objective_count_win_rate",
+    "v_gold_lead_win_rate",
+    "v_lane_lead_win_rate",
 ]
 LOOKUPS = {
     "champions": "SELECT champion_id, champion_key, champion_name, primary_class FROM dim.champion",
@@ -35,6 +43,8 @@ LOOKUPS = {
     "runes": "SELECT rune_id, rune_name, tree_id, slot_index, icon_path FROM dim.rune",
     "shards": "SELECT shard_id, shard_name, icon_path FROM dim.stat_shard",
     "spells": "SELECT spell_id, spell_key, spell_name FROM dim.summoner_spell",
+    # The data checks, so the site can show them (scripts/collect.sh only exports once they pass).
+    "data_checks": "SELECT check_name, is_blocking, failures FROM etl.v_data_quality_checks",
 }
 
 

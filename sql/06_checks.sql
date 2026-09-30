@@ -39,6 +39,20 @@ SELECT 'loaded timelines with no purchases', 1,
         WHERE NOT EXISTS (SELECT 1 FROM fact.item_event AS e
                           WHERE e.match_id = t.match_id AND e.event_type = 'ITEM_PURCHASED'))
 UNION ALL
+SELECT 'matches with no objectives loaded', 1,
+       (SELECT COUNT(*) FROM fact.match AS m
+        WHERE NOT EXISTS (SELECT 1 FROM fact.team_objective AS o WHERE o.match_id = m.match_id))
+UNION ALL
+SELECT 'objectives taken first by both teams', 1,
+       (SELECT COUNT(*) FROM (SELECT match_id, objective FROM fact.team_objective
+                              GROUP BY match_id, objective HAVING SUM(CAST(is_first AS INT)) > 1) AS x)
+UNION ALL
+SELECT 'timelines of 11+ minute games with no gold frames', 1,
+       (SELECT COUNT(*) FROM fact.match_timeline AS t
+        JOIN fact.match AS m ON m.match_id = t.match_id
+        WHERE m.duration_s >= 660
+          AND NOT EXISTS (SELECT 1 FROM fact.participant_frame AS f WHERE f.match_id = t.match_id))
+UNION ALL
 SELECT 'rune pages whose grid rows do not add up to the page games', 1,
        (SELECT COUNT(*) FROM (
             SELECT rp.patch, rp.champion_id, rp.role, rp.page_rank, r.tree_id, r.slot_index

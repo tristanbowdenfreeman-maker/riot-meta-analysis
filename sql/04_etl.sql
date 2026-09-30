@@ -333,6 +333,115 @@ END;
 GO
 
 ------------------------------------------------------------------------------------------
+-- Raw matches -> fact.team_objective, for matches already in fact.match. Separate from
+-- usp_load_matches so matches loaded before this table existed are filled in too.
+------------------------------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE etl.usp_load_objectives
+    @batch_size INT = 1000
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @batch_rows INT, @total_rows INT = 0;
+
+    CREATE TABLE #batch (
+        match_id  VARCHAR(30)   NOT NULL PRIMARY KEY,
+        payload   NVARCHAR(MAX) NOT NULL
+    );
+
+    WHILE 1 = 1
+    BEGIN
+        TRUNCATE TABLE #batch;
+
+        INSERT INTO #batch (match_id, payload)
+        SELECT TOP (@batch_size) r.match_id, r.payload
+        FROM stg.v_match_raw AS r
+        WHERE EXISTS (SELECT 1 FROM fact.match AS m WHERE m.match_id = r.match_id)
+          AND NOT EXISTS (SELECT 1 FROM fact.team_objective AS o WHERE o.match_id = r.match_id)
+        ORDER BY r.match_id;
+
+        SET @batch_rows = @@ROWCOUNT;
+        IF @batch_rows = 0 BREAK;
+
+        -- info.teams[].objectives: {"baron": {"first": true, "kills": 1}, "dragon": {...}, ...}
+        INSERT INTO fact.team_objective (match_id, team_id, objective, is_first, kills)
+        SELECT b.match_id, t.teamId, o.[key], ob.[first], ob.kills
+        FROM #batch AS b
+        CROSS APPLY OPENJSON(b.payload, '$.info.teams') WITH (teamId SMALLINT, objectives NVARCHAR(MAX) AS JSON) AS t
+        CROSS APPLY OPENJSON(t.objectives) AS o
+        CROSS APPLY OPENJSON(o.value) WITH ([first] BIT, kills SMALLINT) AS ob;
+
+        -- A batch with no objectives at all would be picked again forever, so stop.
+        IF @@ROWCOUNT = 0 BREAK;
+        SET @total_rows += @batch_rows;
+    END;
+
+    SELECT @total_rows AS matches_loaded;
+END;
+GO
+
+------------------------------------------------------------------------------------------
+-- Raw timelines -> fact.participant_frame, for timelines already in fact.match_timeline.
+-- Only games of 11+ minutes have a minute-10 frame; shorter ones are remakes or early
+-- surrenders and are skipped, so every match picked up here gets rows.
+------------------------------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE etl.usp_load_frames
+    @batch_size INT = 100
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @batch_rows INT, @total_rows INT = 0;
+
+    CREATE TABLE #batch (
+        match_id  VARCHAR(30)   NOT NULL PRIMARY KEY,
+        payload   NVARCHAR(MAX) NOT NULL
+    );
+
+    WHILE 1 = 1
+    BEGIN
+        TRUNCATE TABLE #batch;
+
+        INSERT INTO #batch (match_id, payload)
+        SELECT TOP (@batch_size) r.match_id, r.payload
+        FROM stg.v_timeline_raw AS r
+        JOIN fact.match_timeline AS t ON t.match_id = r.match_id
+        JOIN fact.match AS m ON m.match_id = r.match_id
+        WHERE m.duration_s >= 660
+          AND NOT EXISTS (SELECT 1 FROM fact.participant_frame AS f WHERE f.match_id = r.match_id)
+        ORDER BY r.match_id;
+
+        SET @batch_rows = @@ROWCOUNT;
+        IF @batch_rows = 0 BREAK;
+
+        -- info.frames[n].participantFrames: {"1": {"totalGold": 7397, "xp": 9690, ...}, "2": ...}
+        INSERT INTO fact.participant_frame (match_id, minute, participant_id, total_gold, xp, creep_score)
+        SELECT b.match_id, CAST(f.[key] AS TINYINT), pf.participantId, pf.totalGold, pf.xp,
+               pf.minionsKilled + pf.jungleMinionsKilled
+        FROM #batch AS b
+        CROSS APPLY OPENJSON(b.payload, '$.info.frames') AS f
+        CROSS APPLY OPENJSON(f.value, '$.participantFrames') AS p
+        CROSS APPLY OPENJSON(p.value) WITH (
+            participantId        TINYINT,
+            totalGold            INT,
+            xp                   INT,
+            minionsKilled        INT,
+            jungleMinionsKilled  INT
+        ) AS pf
+        WHERE f.[key] IN ('10', '15', '20', '25')
+          AND pf.participantId BETWEEN 1 AND 10;
+
+        IF @@ROWCOUNT = 0 BREAK;
+        SET @total_rows += @batch_rows;
+    END;
+
+    SELECT @total_rows AS timelines_loaded;
+END;
+GO
+
+------------------------------------------------------------------------------------------
 -- Empties the fact tables so every raw match and timeline is re-parsed on the next load.
 -- Use after changing etl.usp_load_matches or etl.usp_load_timelines.
 ------------------------------------------------------------------------------------------
@@ -343,6 +452,8 @@ BEGIN
     SET XACT_ABORT ON;
 
     BEGIN TRANSACTION;
+    DELETE FROM fact.participant_frame;
+    DELETE FROM fact.team_objective;
     DELETE FROM fact.item_event;
     DELETE FROM fact.match_timeline;
     DELETE FROM fact.participant_rune;

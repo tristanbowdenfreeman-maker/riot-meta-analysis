@@ -206,3 +206,34 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_fact_item_event_parti
         ON fact.item_event (match_id, participant_id, item_id, event_seq)
         INCLUDE (event_type, timestamp_ms);
 GO
+
+-- Team objectives from match-v5 info.teams[].objectives: which team took each one first, and
+-- how many each took. objective is Riot's key: champion (kills, so first = first blood), tower,
+-- dragon, horde (void grubs), riftHerald, baron, inhibitor, and any new ones Riot adds.
+IF OBJECT_ID(N'fact.team_objective') IS NULL
+CREATE TABLE fact.team_objective (
+    match_id   VARCHAR(30) NOT NULL CONSTRAINT FK_fact_team_objective_match REFERENCES fact.match (match_id),
+    team_id    SMALLINT    NOT NULL,
+    objective  VARCHAR(20) NOT NULL,
+    is_first   BIT         NOT NULL,
+    kills      SMALLINT    NOT NULL,
+    CONSTRAINT PK_fact_team_objective PRIMARY KEY (match_id, team_id, objective)
+);
+GO
+
+-- Each player's gold, XP and creep score at minutes 10, 15, 20 and 25, from the timeline's
+-- once-a-minute frames (frame n is minute n). Games that ended earlier have no row for that minute.
+IF OBJECT_ID(N'fact.participant_frame') IS NULL
+CREATE TABLE fact.participant_frame (
+    match_id        VARCHAR(30) NOT NULL,
+    minute          TINYINT     NOT NULL,
+    participant_id  TINYINT     NOT NULL,
+    total_gold      INT         NOT NULL,
+    xp              INT         NOT NULL,
+    creep_score     SMALLINT    NOT NULL,
+    CONSTRAINT PK_fact_participant_frame PRIMARY KEY (match_id, minute, participant_id),
+    CONSTRAINT FK_fact_participant_frame_timeline FOREIGN KEY (match_id) REFERENCES fact.match_timeline (match_id),
+    CONSTRAINT FK_fact_participant_frame_participant FOREIGN KEY (match_id, participant_id)
+        REFERENCES fact.match_participant (match_id, participant_id)
+);
+GO
