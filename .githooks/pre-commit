@@ -1,0 +1,11 @@
+#!/bin/sh
+# Blocks commits that contain a Riot API key or the .env file. Enabled with:
+#   git config core.hooksPath .githooks
+if git diff --cached --name-only | grep -qx '.env'; then
+    echo "pre-commit: refusing to commit .env" >&2
+    exit 1
+fi
+if git diff --cached -U0 | grep -E '^\+' | grep -qE 'RGAPI-[0-9a-fA-F-]{8,}'; then
+    echo "pre-commit: staged changes contain a Riot API key (RGAPI-...). Remove it and use .env." >&2
+    exit 1
+fi
