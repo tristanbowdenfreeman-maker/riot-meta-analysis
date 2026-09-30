@@ -3,25 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rift Meta</title>
+  <meta name="theme-color" content="#151713">
+  <title>League of Legends Statistics</title>
+  <meta name="author" content="Tristan Bowden-Freeman">
   <meta name="description" content="Champion, item and rune stats for Emerald+ ranked solo/duo on EUW, built from the Riot Games API.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Roboto+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#/">Rift Meta</a>
-    <span class="patch" id="patch-label"></span>
-  </header>
+  <nav class="site-nav" aria-label="Pages">
+    <div class="site-nav__start">
+      <a class="site-nav__back" href="https://tristanbowdenfreeman-maker.github.io/tiny-summit/" aria-label="Back to portfolio"><span aria-hidden="true">&larr;</span><span class="site-nav__back-label">Portfolio</span></a>
+      <a class="site-nav__brand" href="#/" id="patch-label">Patch</a>
+    </div>
+    <ul class="site-nav__links">
+      <li><a href="#/" data-nav="tiers">Tier list</a></li>
+      <li><a href="#/insights" data-nav="insights">Insights</a></li>
+    </ul>
+    <span class="site-nav__progress" aria-hidden="true"></span>
+  </nav>
 
   <main id="view" aria-live="polite"></main>
 
   <footer class="footer">
+    <p class="credit">Designed and built by <a href="https://tristanbowdenfreeman-maker.github.io/tiny-summit/">Tristan Bowden-Freeman</a></p>
     <p>Emerald+ ranked solo/duo on EUW. Data from the Riot Games API, modelled in SQL Server.
-      <a href="https://github.com/tristanbowdenfreeman-maker/riot-meta-analysis">How it's built</a></p>
-    <p class="legal">Rift Meta isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or
+      <a href="#/insights">How it's built</a> ·
+      <a href="https://github.com/tristanbowdenfreeman-maker/riot-meta-analysis">Code on GitHub</a></p>
+    <p class="legal">This site isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or
       anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated
       properties are trademarks or registered trademarks of Riot Games, Inc.</p>
   </footer>

@@ -1,5 +1,6 @@
-// Rift Meta: reads the JSON exported from the SQL Server mart views (site/data) and renders
-// two pages, the tier list (#/ or #/role/TOP) and a champion page (#/champion/Gangplank/TOP).
+// League of Legends Statistics: reads the JSON exported from the SQL Server mart views (site/data) and renders
+// three pages: the tier list (#/ or #/role/TOP), a champion page (#/champion/Gangplank/TOP) and
+// the insights (#/insights).
 
 const IMG = "https://ddragon.leagueoflegends.com/cdn";
 const ROLES = [
@@ -28,6 +29,7 @@ const db = {};          // lookups and the current patch, filled in by init()
 let current = null;     // the page on screen, so role switches on the tier list don't re-render it
 let navigation = 0;     // bumped on every route, so a slow champion load can't overwrite a newer page
 let tierSort = { key: "tier", asc: true };
+let tierQuery = "";     // the tier list's champion search
 
 // ---------- Formatting ----------
 
@@ -36,6 +38,9 @@ const num = (n) => n.toLocaleString("en-GB");
 const plural = (n, one, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const wr = (x) => `<span class="${x >= 0.5 ? "good" : "muted"}">${pct(x, 2)}</span>`;
+// A 95% margin of error in percentage points, e.g. "±5.1".
+const moe = (x) => `±${(x * 100).toFixed(1)}`;
+const signed = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x * 100).toFixed(0)}%`;
 // Data Dragon versions run 10 behind the patch names players see: game version 16.19 is patch 26.19.
 const patchName = (version) => version.replace(/^(\d+)/, (major) => String(Number(major) + 10));
 
@@ -57,8 +62,8 @@ const figure = (share, games) => `<div class="figure"><strong>${pct(share, 2)}</
 // ---------- Data ----------
 
 async function init() {
-  const [meta, patches, tiers, champions, items, runes, trees, shards, spells, matchups] = await Promise.all(
-    ["meta", "patch_summary", "tier_list", "champions", "items", "runes", "rune_trees", "shards", "spells", "champion_matchups"].map(load),
+  const [meta, patches, tiers, champions, items, runes, trees, shards, spells, matchups, volumes] = await Promise.all(
+    ["meta", "patch_summary", "tier_list", "champions", "items", "runes", "rune_trees", "shards", "spells", "champion_matchups", "data_volume"].map(load),
   );
   if (!patches.length) throw new Error("The export has no matches yet.");
   const byPatch = (a, b) => b.patch.localeCompare(a.patch, undefined, { numeric: true });
@@ -72,6 +77,10 @@ async function init() {
     // so nothing on the site rests on a handful of games: 10 at 3,000 matches, 100 at 30,000.
     minGames: Math.max(10, Math.round(patch.matches / 300)),
     tiers: tiers.filter((t) => t.patch === patch.patch),
+    volume: volumes.find((v) => v.patch === patch.patch),
+    avgMinutes: patch.avg_duration_min,
+    firstGame: patch.first_game_utc,
+    lastGame: patch.last_game_utc,
     matchups: matchups.filter((m) => m.patch === patch.patch),
     champions: new Map(champions.map((c) => [c.champion_id, c])),
     byKey: new Map(champions.map((c) => [c.champion_key.toLowerCase(), c])),
@@ -81,12 +90,14 @@ async function init() {
     shards: new Map(shards.map((s) => [s.shard_id, s])),
     spells: new Map(spells.map((s) => [s.spell_id, s])),
   });
-  document.getElementById("patch-label").textContent = `Patch ${patchName(db.patch)} · ${plural(db.matches, "match", "matches")}`;
+  document.getElementById("patch-label").textContent = `Patch ${patchName(db.patch)}`;
 }
 
 const forChampion = (rows, championId, role) =>
   rows.filter((r) => r.patch === db.patch && r.champion_id === championId && r.role === role);
 const byGames = (a, b) => b.games - a.games;
+const MATCHUP_MIN_GAMES = 5;   // champion page counter picks (docs/adr/0013)
+const MATCHUP_PRIOR = 10;
 const enoughGames = (r) => r.games >= db.minGames;
 
 // Lane opponents with enough games: weakest = the ones this champion loses to most.
@@ -107,12 +118,13 @@ function tabs(roles, selected, href) {
 }
 
 function moveIndicator(container) {
-  const bar = container.querySelector(".tabs");
-  const on = bar?.querySelector('[aria-selected="true"]');
-  if (!on) return;
-  const indicator = bar.querySelector(".indicator");
-  indicator.style.width = `${on.offsetWidth}px`;
-  indicator.style.transform = `translateX(${on.offsetLeft}px)`;
+  container.querySelectorAll(".tabs").forEach((bar) => {
+    const on = bar.querySelector('[aria-selected="true"]');
+    if (!on) return;
+    const indicator = bar.querySelector(".indicator");
+    indicator.style.width = `${on.offsetWidth}px`;
+    indicator.style.transform = `translateX(${on.offsetLeft}px)`;
+  });
 }
 
 function wireTabs(container) {
@@ -129,14 +141,19 @@ const TIER_COLUMNS = [
   ["tier", "Tier"], ["win_rate", "Win rate"], ["pick_rate", "Pick rate"], ["ban_rate", "Ban rate"], ["games", "Games"],
 ];
 
+// Letters only, so "velkoz" finds Vel'Koz and "nunu" finds Nunu & Willump.
+const searchable = (s) => s.toLowerCase().normalize("NFD").replace(/[^a-z]/g, "");
+
 function tierRows(role) {
-  const rows = db.tiers.filter((t) => t.tier != null && (role === "ALL" || t.role === role));
+  const query = searchable(tierQuery);
+  const rows = db.tiers.filter((t) => t.tier != null && (role === "ALL" || t.role === role)
+    && (!query || searchable(t.champion_name).includes(query)));
   const { key, asc } = tierSort;
   const value = (r) => (key === "tier" ? TIER_ORDER[r.tier] * 10 - r.adjusted_win_rate : r[key]);
   return rows.sort((a, b) => (asc ? value(a) - value(b) : value(b) - value(a)));
 }
 
-function tierTable(role) {
+function tierTable(role, animate = true) {
   const head = TIER_COLUMNS.map(([key, label]) => {
     const sorted = tierSort.key === key ? ` aria-sort="${tierSort.asc ? "ascending" : "descending"}"` : "";
     return `<th${sorted}${["ban_rate", "games"].includes(key) ? ' class="hide-sm"' : ""}><button data-sort="${key}">${label}</button></th>`;
@@ -148,11 +165,11 @@ function tierTable(role) {
     const weak = counters(r.champion_id, r.role, true).slice(0, 3)
       .map((m) => db.champions.get(m.opponent_id)).filter(Boolean)
       .map((o) => champImg(o, "sm round")).join("");
-    return `<tr class="link rise" style="--i:${Math.min(i, 20)}" data-href="${href}">
+    return `<tr class="link${animate ? " rise" : ""}" style="--i:${Math.min(i, 20)}" data-href="${href}">
       <td class="rank left hide-sm">${i + 1}</td>
       <td class="left"><a class="champ-cell" href="${href}">${champImg(c)}<span>${esc(c.champion_name)}</span></a></td>
       <td><span class="tier tier-${r.tier}">${r.tier}</span></td>
-      <td>${pct(r.win_rate, 2)}</td>
+      <td>${pct(r.win_rate, 2)}<small class="moe hide-sm">${moe(r.win_rate_moe)}</small></td>
       <td>${pct(r.pick_rate, 2)}</td>
       <td class="hide-sm">${pct(r.ban_rate, 2)}</td>
       <td class="hide-sm">${num(r.games)}</td>
@@ -163,7 +180,9 @@ function tierTable(role) {
 
   return `<div class="table-wrap"><table>
     <thead><tr><th class="left hide-sm">#</th><th class="left">Champion</th>${head}<th class="left hide-sm">Role</th><th class="hide-sm">Weak against</th></tr></thead>
-    <tbody>${body || `<tr><td colspan="9" class="left muted">No champions have enough games in this role yet.</td></tr>`}</tbody>
+    <tbody>${body || `<tr><td colspan="9" class="left muted">${tierQuery
+      ? `No ranked champion matches “${esc(tierQuery)}”${role === "ALL" ? "" : ` in ${ROLE_NAME[role]}`}.`
+      : "No champions have enough games in this role yet."}</td></tr>`}</tbody>
   </table></div>`;
 }
 
@@ -178,18 +197,46 @@ function renderTierList(role) {
   }
 
   view.innerHTML = `<div class="page">
-    <div class="hero">
-      <h1>Who's winning<br>patch ${esc(patchName(db.patch))}</h1>
-      <p>Win, pick and ban rates for every champion in Emerald+ solo/duo on EUW, from ${plural(db.matches, "ranked match", "ranked matches")}.</p>
+    <div class="hero hero--split">
+      <div>
+        <h1>Champion<br>performance</h1>
+        <p>Win, pick and ban rates for every champion in Emerald+ solo/duo on EUW, from ${plural(db.matches, "ranked match", "ranked matches")}.</p>
+      </div>
+      ${kpiTriangle(db.volume)}
     </div>
-    ${tabs(ROLES, role, (r) => (r === "ALL" ? "#/" : `#/role/${r}`))}
+    <div class="toolbar">
+      ${tabs(ROLES, role, (r) => (r === "ALL" ? "#/" : `#/role/${r}`))}
+      <label class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" placeholder="Search champions" aria-label="Search champions" value="${esc(tierQuery)}" autocomplete="off" spellcheck="false">
+        <kbd aria-hidden="true">/</kbd>
+      </label>
+    </div>
     <div class="table-slot">${tierTable(role)}</div>
-    <p class="method">Tiers rank champions within each role by win rate, adjusted towards 50% for small
-      samples. A champion needs a 1% pick rate in a role to be ranked. Matchups need ${num(db.minGames)}+ games.</p>
+    <p class="method">± is the 95% margin of error. Tiers rank champions within each role by win rate after
+      adding ${num(Math.round(db.tiers[0]?.prior_games ?? 0))} games at 50%, so a short lucky run can't top the list
+      (<a href="#/insights">why</a>). A champion needs a 1% pick rate in a role to be ranked. Matchups need ${num(db.minGames)}+ games.</p>
   </div>`;
   const el = view.firstElementChild;
   current = { page: "tiers", el, role };
   wireTabs(el);
+  reveal(el);
+
+  // Search filters the table as you type; Enter opens the top result, Escape clears.
+  const search = el.querySelector(".search input");
+  search.addEventListener("input", () => {
+    tierQuery = search.value;
+    el.querySelector(".table-slot").innerHTML = tierTable(current.role, false);
+  });
+  search.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const first = el.querySelector("tr[data-href]");
+      if (first) location.hash = first.dataset.href;
+    } else if (e.key === "Escape" && search.value) {
+      search.value = "";
+      search.dispatchEvent(new Event("input"));
+    }
+  });
 
   el.querySelector(".table-slot").addEventListener("click", (e) => {
     const sort = e.target.closest("button[data-sort]");
@@ -206,21 +253,51 @@ function renderTierList(role) {
 
 // ---------- Champion page ----------
 
-function optionPanel(title, rows, icons, labels = ["Pick rate", "Win rate"]) {
+// Option panel columns: [heading, cell]. The default is pick rate then win rate.
+const shareColumn = (label = "Pick rate") => [label, (r) => figure(r.pick_share, r.games)];
+const winColumn = ["Win rate", (r) => `<div class="figure">${wr(r.win_rate)}</div>`];
+// Win rate with its 95% margin of error. Matchup rows are small, so this uses the widest margin
+// (a 50% win rate), which doesn't collapse to ±0 on a 5-0 record.
+const winMarginColumn = ["Win rate", (r) => `<div class="figure">${wr(r.win_rate)}<small>${moe(1.96 * Math.sqrt(0.25 / r.games))}</small></div>`];
+
+function optionPanel(title, rows, icons, columns = [shareColumn(), winColumn], empty = `No option has ${num(db.minGames)}+ games yet.`) {
+  const cls = columns.length === 1 ? " cols-1" : "";
   const body = rows.length
-    ? rows.map((r, i) => `<div class="option rise" style="--i:${i}">
-        <div class="icons">${icons(r)}</div>${figure(r.pick_share, r.games)}<div class="figure">${wr(r.win_rate)}</div>
+    ? rows.map((r, i) => `<div class="option${cls} rise" style="--i:${i}">
+        <div class="icons">${icons(r)}</div>${columns.map(([, cell]) => cell(r)).join("")}
       </div>`).join("")
-    : `<div class="empty">No option has ${num(db.minGames)}+ games yet.</div>`;
-  return `<div class="panel"><div class="option head"><h3>${title}</h3><span>${labels[0]}</span><span>${labels[1]}</span></div>${body}</div>`;
+    : `<div class="empty">${empty}</div>`;
+  return `<div class="panel"><div class="option${cls} head"><h3>${title}</h3>${columns.map(([label]) => `<span>${label}</span>`).join("")}</div>${body}</div>`;
 }
 
-function starterIcons(starterItems) {
-  return starterItems.split(",").map((pair) => {
-    const [id, qty] = pair.split(":").map(Number);
-    return qty > 1 ? `<span class="qty">${itemImg(id)}<span>${qty}</span></span>` : itemImg(id);
-  }).join("");
+// An early-game card: the most picked option, with the runner-up underneath when it has enough games.
+// `pick` turns a row into [icons, name, detail].
+function earlyCard(label, rows, pick) {
+  const [first, second] = rows;
+  if (!first) return `<div class="stat early"><div class="label">${label}</div><div class="empty">No option has ${num(db.minGames)}+ games yet.</div></div>`;
+  const [icons, name, detail] = pick(first);
+  return `<div class="stat early">
+    <div class="label">${label}</div>
+    <div class="core-item"><span class="icons">${icons}</span><strong>${name}${detail ? `<small>${detail}</small>` : ""}</strong></div>
+    <div class="vs">${pct(first.pick_share)} of games · ${wr(first.win_rate)} win rate</div>
+    <div class="alt">${second
+      ? `<span class="icons">${pick(second)[0]}</span><span>Otherwise ${pct(second.pick_share)} · ${pct(second.win_rate)} win rate</span>`
+      : `<span>No other option has ${num(db.minGames)}+ games</span>`}</div>
+  </div>`;
 }
+
+const ordinal = (n) => `${n}${[, "st", "nd", "rd"][n] ?? "th"}`;
+const itemName = (id) => esc(db.items.get(id)?.item_name ?? `Item ${id}`);
+
+// A starter set, most expensive item first: [icons, main item, "+ 2 Health Potion"].
+function starterSet(starterItems) {
+  const items = starterItems.split(",").map((pair) => pair.split(":").map(Number))
+    .sort(([a], [b]) => (db.items.get(b)?.total_gold ?? 0) - (db.items.get(a)?.total_gold ?? 0));
+  const icons = items.map(([id, qty]) => (qty > 1 ? `<span class="qty">${itemImg(id)}<span>${qty}</span></span>` : itemImg(id))).join("");
+  const extras = items.slice(1).map(([id, qty]) => `${qty > 1 ? `${qty} ` : ""}${itemName(id)}`);
+  return [icons, itemName(items[0][0]), extras.length ? `+ ${extras.join(" + ")}` : ""];
+}
+const spellName = (id) => esc(db.spells.get(id)?.spell_name ?? "");
 
 // One grid cell: icon plus win rate, pick share and games, dimmed unless `on`.
 function runeCell(icon, stats, on, extraClass = "") {
@@ -277,9 +354,21 @@ function runeBoard(page, picks, shardPicks) {
   return `<div class="rune-board">
     <div class="rune-tree">${title(page.primary_tree_id)}${primaryRows}</div>
     <div class="rune-tree">${title(page.secondary_tree_id)}${secondaryRows}</div>
-    <div class="rune-tree"><h4>Shards</h4>${shardRows}</div>
+    <div class="rune-tree shards"><h4>Shards</h4>${shardRows}</div>
     <p class="legend">Under each rune: win rate, share of this page's players who take it, games.</p>
   </div>`;
+}
+
+// Playstyle cards: the champion's stat in this role against everyone in the role.
+const PLAYSTYLE = [["kda", "KDA", 2], ["cs_per_min", "CS / min", 1], ["damage_per_min", "Damage / min", 0], ["vision_per_min", "Vision / min", 2]];
+
+function playstyleCard(stats, key, label, digits, role) {
+  const value = stats[key];
+  const average = stats[`role_${key}`];
+  const fmt = (x) => (x == null ? "–" : x.toLocaleString("en-GB", { maximumFractionDigits: digits, minimumFractionDigits: digits }));
+  const diff = value != null && average ? value / average - 1 : null;
+  return `<div class="stat"><div class="label">${label}</div><div class="value">${fmt(value)}</div>
+    <div class="vs">${diff == null ? "" : `<span class="${diff >= 0 ? "good" : "muted"}">${signed(diff)}</span> `}vs ${ROLE_NAME[role]} average ${fmt(average)}</div></div>`;
 }
 
 async function renderChampion(key, role, ticket) {
@@ -294,9 +383,9 @@ async function renderChampion(key, role, ticket) {
   const roles = allRoles.filter((r) => r.tier != null || r.role === role);
 
   view.innerHTML = `<div class="loading">Loading ${esc(champ.champion_name)}…</div>`;
-  const [starters, boots, cores, late, pages, runePicks, shardPicks, spells] = await Promise.all(
-    ["champion_starter_sets", "champion_boots", "champion_core_builds", "champion_late_items",
-     "champion_rune_stats", "champion_rune_picks", "champion_shard_picks", "champion_spell_stats"].map(load),
+  const [starters, boots, core, late, pages, runePicks, shardPicks, spells] = await Promise.all(
+    ["champion_starter_sets", "champion_boots", "champion_core_items", "champion_late_items", "champion_rune_stats",
+     "champion_rune_picks", "champion_shard_picks", "champion_spell_stats"].map(load),
   );
   if (ticket !== navigation) return;  // the reader has already moved on
 
@@ -309,10 +398,34 @@ async function renderChampion(key, role, ticket) {
 
   const opponent = (r) => {
     const o = db.champions.get(r.opponent_id);
-    return o ? `${champImg(o, "round")}<span>${esc(o.champion_name)}</span>` : "";
+    return o ? `${champImg(o, "round")}<span class="name">${esc(o.champion_name)}</span>` : "";
   };
-  const matchup = (weakest) => counters(champ.champion_id, role, weakest).slice(0, 5)
-    .map((m) => ({ ...m, pick_share: m.games / stats.games }));
+  // Counter picks: lane opponents with 5+ games, ranked by win rate pulled towards the champion's
+  // own, as if each had 10 more games at that rate. A 5-0 then can't outrank a 30-10 (docs/adr/0013).
+  const laneGames = db.matchups.filter((m) => m.champion_id === champ.champion_id && m.role === role);
+  const laneTotal = laneGames.reduce((sum, m) => sum + m.games, 0);
+  const ranked = laneGames.filter((m) => m.games >= MATCHUP_MIN_GAMES)
+    .map((m) => ({ ...m, pick_share: m.games / laneTotal, score: (m.wins + MATCHUP_PRIOR * stats.win_rate) / (m.games + MATCHUP_PRIOR) }))
+    .sort((a, b) => b.score - a.score);
+  const bestVs = ranked.filter((m) => m.score > stats.win_rate).slice(0, 5);
+  const worstVs = ranked.filter((m) => m.score < stats.win_rate).reverse().slice(0, 5);
+
+  // The core: the three items finished 1st to 3rd most often, in the order they usually come.
+  // After the core: every other finished item, wherever it was built, out of all the champion's
+  // games with a timeline (docs/adr/0012).
+  const coreRows = mine(core);
+  const coreThree = coreRows.filter(enoughGames).slice(0, 3).sort((a, b) => a.avg_slot - b.avg_slot);
+  const timelineGames = coreRows.length ? Math.round(coreRows[0].games / coreRows[0].pick_share) : 0;
+  const inCore = new Set(coreThree.map((r) => r.item_id));
+  const rest = new Map();
+  for (const r of [...coreRows, ...mine(late)].filter((r) => !inCore.has(r.item_id))) {
+    const item = rest.get(r.item_id) ?? { item_id: r.item_id, games: 0, slots: 0 };
+    item.games += r.games;
+    item.slots += r.avg_slot * r.games;
+    rest.set(r.item_id, item);
+  }
+  const restRows = [...rest.values()].filter((r) => r.games >= 3).sort(byGames).slice(0, 8)
+    .map((r) => ({ ...r, avg_slot: r.slots / r.games, pick_share: r.games / timelineGames }));
 
   const sample = stats.tier == null
     ? `Only ${plural(stats.games, "game")} as ${ROLE_NAME[role]}, too few to rank. Treat these numbers as rough.`
@@ -324,19 +437,24 @@ async function renderChampion(key, role, ticket) {
       <img src="${IMG}/${db.version}/img/champion/${champ.champion_key}.png" alt="">
       <div>
         <h1>${esc(champ.champion_name)}</h1>
-        <p class="sub">${ROLE_NAME[role]} · ${esc(champ.primary_class)}</p>
+        <p class="sub">${[...new Set([ROLE_NAME[role], champ.primary_class])].map(esc).join(" · ")}</p>
       </div>
     </div>
     ${roles.length > 1 ? tabs(roles.map((r) => [r.role, ROLE_NAME[r.role]]), role, (r) => `#/champion/${champ.champion_key}/${r}`) : ""}
 
     <div class="stats">
       <div class="stat"><div class="label">Tier</div><div class="value">${stats.tier ? `<span class="tier tier-${stats.tier}">${stats.tier}</span>` : "–"}</div></div>
-      <div class="stat"><div class="label">Win rate</div><div class="value">${pct(stats.win_rate, 2)}</div></div>
+      <div class="stat"><div class="label">Win rate <span class="faint">${moe(stats.win_rate_moe)}</span></div><div class="value">${pct(stats.win_rate, 2)}</div></div>
       <div class="stat"><div class="label">Pick rate</div><div class="value">${pct(stats.pick_rate, 2)}</div></div>
       <div class="stat"><div class="label">Ban rate</div><div class="value">${pct(stats.ban_rate, 2)}</div></div>
       <div class="stat"><div class="label">Games</div><div class="value">${num(stats.games)}</div></div>
     </div>
     <p class="method sample">${sample}</p>
+
+    <section>
+      <h2>Playstyle</h2>
+      <div class="stats compare">${PLAYSTYLE.map(([key, label, digits]) => playstyleCard(stats, key, label, digits, role)).join("")}</div>
+    </section>
 
     <section>
       <h2>Runes</h2>
@@ -351,36 +469,41 @@ async function renderChampion(key, role, ticket) {
     </section>
 
     <section>
-      <h2>Summoner spells</h2>
-      <div class="grid-2">${optionPanel("Most picked", top(mine(spells), 2), (r) => spellImg(r.spell_a_id) + spellImg(r.spell_b_id))}</div>
-    </section>
-
-    <section>
-      <h2>Items</h2>
-      <div class="grid-2">
-        ${optionPanel("Starter items", top(mine(starters), 2), (r) => starterIcons(r.starter_items))}
-        ${optionPanel("Boots", top(mine(boots), 3), (r) => itemImg(r.item_id))}
+      <h2>Early game</h2>
+      <div class="stats early-game">
+        ${earlyCard("Summoner spells", top(mine(spells), 2), (r) => [spellImg(r.spell_a_id) + spellImg(r.spell_b_id), `${spellName(r.spell_a_id)} + ${spellName(r.spell_b_id)}`])}
+        ${earlyCard("Starter items", top(mine(starters), 2), (r) => starterSet(r.starter_items))}
+        ${earlyCard("Boots", top(mine(boots), 2), (r) => [itemImg(r.item_id), itemName(r.item_id)])}
       </div>
     </section>
 
     <section>
-      <h2>Core builds</h2>
-      ${optionPanel("First three completed items", top(mine(cores), 5),
-        (r) => [r.item1_id, r.item2_id, r.item3_id].map(itemImg).join('<span class="arrow">›</span>'))}
-    </section>
-
-    <section>
-      <h2>Late items</h2>
-      ${optionPanel("Built 4th to 6th", top(mine(late), 5), (r) => itemImg(r.item_id), ["Built by", "Win rate"])}
-      <p class="method">Built by: share of players who reached a 4th item that built it 4th, 5th or 6th.</p>
+      <h2>Build</h2>
+      <h3 class="sub-head">Core items</h3>
+      <div class="stats core">${coreThree.map((r, i) => `<div class="stat core-card">
+          <div class="label">${ordinal(i + 1)} item</div>
+          <div class="core-item">${itemImg(r.item_id)}<strong>${itemName(r.item_id)}</strong></div>
+          <div class="vs">${pct(r.pick_share)} of games · ${wr(r.win_rate)} win rate</div>
+          ${i < coreThree.length - 1 ? '<span class="core-arrow" aria-hidden="true">&rarr;</span>' : ""}
+        </div>`).join("") || `<div class="stat"><div class="empty">No item has ${num(db.minGames)}+ games yet.</div></div>`}</div>
+      <h3 class="sub-head">After the core</h3>
+      <div class="panel tiles">${restRows.map((r) => `<div class="tile">${itemImg(r.item_id)}
+          <span class="name">${itemName(r.item_id)}<small>${pct(r.pick_share)} of games · usually ${ordinal(Math.round(r.avg_slot))}</small></span>
+        </div>`).join("") || '<div class="empty">No other item has been finished by 3+ players yet.</div>'}</div>
+      <p class="method">Core items: the three items players finish 1st, 2nd or 3rd most often, in the order they usually come, with how often each is one of
+        their first three. After the core: the other items they finish, at any point, out of ${plural(timelineGames, "game")}.
+        It has no win rate, because items finished later come from longer games.</p>
     </section>
 
     <section>
       <h2>Matchups</h2>
       <div class="grid-2">
-        ${optionPanel("Weak against", matchup(true), opponent, ["Faced", "Win rate"])}
-        ${optionPanel("Strong against", matchup(false), opponent, ["Faced", "Win rate"])}
+        ${optionPanel("Does best vs", bestVs, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent beaten more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
+        ${optionPanel("Does worst vs", worstVs, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent lost to more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
       </div>
+      <p class="method">The enemy in the same role, against ${esc(champ.champion_name)}'s ${pct(stats.win_rate)} win rate overall.
+        Opponents need ${MATCHUP_MIN_GAMES}+ games, and are ranked as if each had ${MATCHUP_PRIOR} more games at that overall
+        rate, so a lucky 5-0 doesn't top the list. ± is the 95% margin of error.</p>
     </section>
   </div>`;
 
@@ -396,6 +519,605 @@ async function renderChampion(key, role, ticket) {
   window.scrollTo({ top: 0 });
 }
 
+// ---------- Insights ----------
+
+// [name, what the count chart counts] for each objective in the match JSON (docs/adr/0014).
+const OBJECTIVES = {
+  inhibitor: ["First inhibitor", "inhibitors"],
+  baron: ["First Baron", "Barons"],
+  tower: ["First tower", "towers"],
+  riftHerald: ["Rift Herald", "Rift Heralds"],
+  dragon: ["First dragon", "dragons"],
+  champion: ["First blood", null],
+  horde: ["First void grubs", "void grubs"],
+};
+const objectiveName = (key) => OBJECTIVES[key]?.[0] ?? key;
+const inSentence = (name) => name.replace(/^First /, "first ");
+const LEAD_MINUTES = [10, 15, 20, 25];
+const leadBand = (b) => (b.band_max == null ? `${b.band_min / 1000}k+` : `${b.band_min / 1000}–${b.band_max / 1000}k`);
+
+// A win-rate column on a 0–100% scale, with its 95% margin of error.
+const rateColumn = (key, rate, margin, label, tipText, digits = 1) => `<div class="column" data-key="${esc(key)}" tabindex="0" data-tip="${esc(tipText)}">
+    <span class="column-plot">
+      <span class="column-bar${rate < 0.5 ? " against" : ""}" style="--h: ${rate.toFixed(4)}"></span>
+      <span class="whisker" style="--lo: ${Math.max(rate - margin, 0).toFixed(4)}; --hi: ${Math.min(rate + margin, 1).toFixed(4)}"></span>
+    </span>
+    <strong>${pct(rate, digits)}</strong>
+    <small>${esc(label)}</small>
+  </div>`;
+
+const RANK_NAME = { EMERALD: "Emerald", DIAMOND: "Diamond", MASTER: "Master", GRANDMASTER: "Grandmaster", CHALLENGER: "Challenger" };
+const RANK_ORDER = Object.keys(RANK_NAME);
+// Plain-English names for the winners-against-losers stats.
+const METRIC_LABEL = {
+  "Deaths": "Deaths", "Kills + assists": "Kills + assists", "CS / min": "Farm per minute",
+  "Damage / min": "Damage per minute", "Vision / min": "Vision per minute", "First item (min)": "Time to first item",
+};
+const dateName = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const statValue = (v) => (v >= 100 ? num(Math.round(v)) : v.toFixed(v >= 10 ? 1 : 2));
+
+// ---------- Dashboard pieces ----------
+
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Headline figures count up from zero the first time they scroll into view.
+const KPI_FORMAT = {
+  num: (v) => num(Math.round(v)),
+  compact: (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : num(Math.round(v))),
+};
+const kpi = (label, value, note = "", format = "num", cls = "") => `<div class="kpi${cls ? ` ${cls}` : ""}">
+    <div class="label">${label}</div>
+    <div class="value" data-count="${value}" data-format="${format}">${KPI_FORMAT[format](value)}</div>
+    ${note ? `<div class="note">${note}</div>` : ""}
+  </div>`;
+
+function countUp(el) {
+  const target = Number(el.dataset.count);
+  const format = KPI_FORMAT[el.dataset.format];
+  // Hold the finished number's width, so the text around it doesn't move while it counts.
+  el.style.minWidth = `${el.getBoundingClientRect().width}px`;
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min((now - start) / 1400, 1);
+    el.textContent = format(target * (1 - (1 - t) ** 4));
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// The three headline figures: item events on top, matches and player records under it.
+const kpiTriangle = (v) => `<div class="kpi-triangle reveal">
+    ${kpi("Item events", v.item_events, "", "num", "apex")}
+    ${kpi("Ranked matches", v.matches)}
+    ${kpi("Player records", v.player_records)}
+  </div>`;
+
+// Marks each .reveal block visible as it scrolls in: CSS grows its bars, and its figures count up.
+function reveal(root) {
+  const blocks = root.querySelectorAll(".reveal");
+  if (reduceMotion || !("IntersectionObserver" in window)) {
+    blocks.forEach((block) => block.classList.add("is-visible"));
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => entries.forEach((entry) => {
+    if (!entry.isIntersecting) return;
+    entry.target.classList.add("is-visible");
+    entry.target.querySelectorAll("[data-count]").forEach(countUp);
+    observer.unobserve(entry.target);
+  }), { threshold: 0.15 });
+  blocks.forEach((block) => observer.observe(block));
+}
+
+// A pill of options, styled like the role tabs. Clicking one calls onPick(value).
+function slicer(options, selected, label) {
+  const buttons = options
+    .map(([value, text]) => `<button role="tab" aria-selected="${value === selected}" data-value="${value}">${text}</button>`)
+    .join("");
+  return `<div class="tabs slicer" role="tablist" aria-label="${esc(label)}"><span class="indicator"></span>${buttons}</div>`;
+}
+
+function wireSlicer(bar, onPick) {
+  bar.addEventListener("click", (e) => {
+    const button = e.target.closest("button[data-value]");
+    if (!button || button.getAttribute("aria-selected") === "true") return;
+    bar.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", b === button));
+    moveIndicator(bar.parentElement);
+    onPick(button.dataset.value);
+  });
+}
+
+// Re-renders a list and slides rows that stay to their new place (FLIP); new rows fade in.
+function reorder(list, html) {
+  const before = new Map([...list.children].map((el) => [el.dataset.key, el.getBoundingClientRect().top]));
+  list.innerHTML = html;
+  if (reduceMotion) return;
+  [...list.children].forEach((el, i) => {
+    const top = before.get(el.dataset.key);
+    const frames = top == null
+      ? [{ opacity: 0, transform: "translateY(0.75rem)" }, { opacity: 1, transform: "none" }]
+      : [{ transform: `translateY(${top - el.getBoundingClientRect().top}px)` }, { transform: "none" }];
+    el.animate(frames, { duration: 700, delay: top == null ? i * 40 : 0, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "backwards" });
+  });
+}
+
+// Updates el to match html in place when the structure is the same, so bars and columns
+// animate between states; anything that differs is swapped for the new markup.
+function morph(el, html) {
+  const next = document.createElement(el.tagName);
+  next.innerHTML = html;
+  const sync = (a, b) => {
+    if (a.childNodes.length !== b.childNodes.length) return a.replaceChildren(...b.childNodes);
+    [...b.childNodes].forEach((bn, i) => {
+      const an = a.childNodes[i];
+      if (an.nodeName !== bn.nodeName) return an.replaceWith(bn);
+      if (bn.nodeType === Node.TEXT_NODE) {
+        if (an.textContent !== bn.textContent) an.textContent = bn.textContent;
+        return;
+      }
+      if (bn.nodeType !== Node.ELEMENT_NODE) return;
+      for (const { name, value } of bn.attributes) if (an.getAttribute(name) !== value) an.setAttribute(name, value);
+      for (const { name } of [...an.attributes]) if (!bn.hasAttribute(name)) an.removeAttribute(name);
+      sync(an, bn);
+    });
+  };
+  sync(el, next);
+}
+
+// Grows columns up from zero, for charts whose columns were just replaced.
+function growColumns(root) {
+  if (reduceMotion) return;
+  root.querySelectorAll(".column-bar").forEach((bar, i) => bar.animate(
+    [{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }],
+    { duration: 900, delay: i * 50, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "backwards" },
+  ));
+}
+
+// One tooltip for every element with data-tip ("Title\nline\nline"), on hover, tap or keyboard focus.
+const tip = Object.assign(document.createElement("div"), { className: "tip", role: "tooltip" });
+document.body.append(tip);
+let tipTarget = null;
+function showTip(target, x, y) {
+  if (target !== tipTarget) {
+    const [title, ...lines] = target.dataset.tip.split("\n");
+    tip.innerHTML = `<strong>${esc(title)}</strong>${lines.map((l) => `<span>${esc(l)}</span>`).join("")}`;
+    tipTarget = target;
+  }
+  tip.classList.add("on");
+  const left = Math.min(Math.max(x + 14, 8), innerWidth - tip.offsetWidth - 8);
+  const top = y - tip.offsetHeight - 14 < 8 ? y + 20 : y - tip.offsetHeight - 14;
+  tip.style.transform = `translate(${left}px, ${top}px)`;
+}
+function hideTip() {
+  tip.classList.remove("on");
+  tipTarget = null;
+}
+document.addEventListener("pointermove", (e) => {
+  const target = e.target.closest?.("[data-tip]");
+  if (target) showTip(target, e.clientX, e.clientY);
+  else if (tipTarget) hideTip();
+}, { passive: true });
+document.addEventListener("focusin", (e) => {
+  const target = e.target.closest?.("[data-tip]");
+  if (!target) return hideTip();
+  const box = target.getBoundingClientRect();
+  showTip(target, box.left + box.width / 2, box.top);
+});
+window.addEventListener("scroll", hideTip, { passive: true });
+
+// ---------- Insights ----------
+
+async function renderInsights(ticket) {
+  view.innerHTML = `<div class="loading">Loading insights…</div>`;
+  const [gaps, bans, banBands, sides, sample, checks, objectives, objectiveCounts, goldLeads, laneLeads] = await Promise.all(
+    ["role_win_gap", "ban_vs_win", "ban_band_win_rate", "side_win_rate", "sample_by_tier", "data_checks",
+      "objective_win_rate", "objective_count_win_rate", "gold_lead_win_rate", "lane_lead_win_rate"].map(load),
+  );
+  if (ticket !== navigation) return;
+  const now = (rows) => rows.filter((r) => r.patch === db.patch);
+  const vol = db.volume;
+
+  // Objectives: the win rate of the team that took each one first. Picking one charts
+  // win rate by how many of it a team took.
+  const firsts = now(objectives).filter((o) => o.games >= db.minGames).sort((a, b) => b.win_rate - a.win_rate);
+  const objectiveCountRows = now(objectiveCounts);
+  const firstOf = (key) => firsts.find((o) => o.objective === key);
+  let objective = firstOf("dragon") ? "dragon" : firsts[0]?.objective;
+  // 99.6% would round to 100%, which reads as every game.
+  const takenIn = (share) => `Taken in ${share < 1 ? Math.min(99, Math.round(share * 100)) : 100}% of games`;
+  const objectiveRows = () => firsts.map((o) => `<button class="bar-row" data-key="${esc(o.objective)}" aria-pressed="${o.objective === objective}"
+      data-tip="${esc(`${objectiveName(o.objective)}\nThe team that took it won ${num(o.wins)} of ${num(o.games)} games (${moe(o.win_rate_moe)})\n${takenIn(o.taken_share)}`)}">
+      <span class="bar-label">${esc(objectiveName(o.objective))}<small>${takenIn(o.taken_share)}</small></span>
+      <span class="bar-track even"><span class="bar" style="--w: ${o.win_rate.toFixed(4)}"></span></span>
+      <span class="bar-value">${pct(o.win_rate)}</span>
+    </button>`).join("");
+  const objectiveChart = () => {
+    const rows = objectiveCountRows.filter((c) => c.objective === objective && c.games >= db.minGames).sort((a, b) => a.taken - b.taken);
+    const noun = OBJECTIVES[objective]?.[1] ?? objective;
+    if (!rows.length) {
+      // First blood happens once a game, so compare the team that got it with the team that gave it up.
+      const o = firstOf(objective);
+      const tipText = (who, wins) => `${who}\nWon ${num(wins)} of ${num(o.games)} games`;
+      return {
+        title: `Win rate with and without ${inSentence(objectiveName(objective))}`,
+        n: 2,
+        html: rateColumn("got", o.win_rate, o.win_rate_moe, "Got it", tipText("Got it", o.wins), 0)
+          + rateColumn("gave", 1 - o.win_rate, o.win_rate_moe, "Gave it up", tipText("Gave it up", o.games - o.wins), 0),
+      };
+    }
+    return {
+      title: `Win rate by ${noun} taken`,
+      n: rows.length,
+      html: rows.map((c) => {
+        const label = `${c.taken}${c.is_capped ? "+" : ""}`;
+        return rateColumn(label, c.win_rate, c.win_rate_moe, label,
+          `${label} ${noun}\nTeams won ${num(c.wins)} of ${num(c.games)} games\n${pct(c.win_rate)} (${moe(c.win_rate_moe)})`, 0);
+      }).join(""),
+    };
+  };
+  const objectivePanel = () => {
+    const chart = objectiveChart();
+    return `<h3 class="sub-head">${esc(chart.title)}</h3>
+      <div class="columns${chart.n > 6 ? " dense" : ""}" style="--n: ${chart.n}; --even: 0.5">${chart.html}</div>`;
+  };
+  const [topObjective, secondObjective, thirdObjective] = firsts;
+  const firstBlood = firstOf("champion");
+
+  // Gold leads: the leading team's win rate by lead size, and by a lane lead in each role,
+  // at the minute picked in the slicer.
+  const leadRows = now(goldLeads);
+  const laneRows = now(laneLeads);
+  const minutes = LEAD_MINUTES.filter((m) => leadRows.some((r) => r.minute === m));
+  let minute = minutes.includes(15) ? 15 : minutes[0];
+  const bandsAt = () => leadRows.filter((r) => r.minute === minute).sort((a, b) => a.band_min - b.band_min);
+  const lanesAt = () => ROLES.slice(1).map(([role]) => laneRows.find((r) => r.minute === minute && r.role === role)).filter(Boolean);
+  const bandFrom = (min) => bandsAt().find((b) => b.band_min === min);
+  const leadTitle = () => {
+    const b = bandFrom(2000);
+    return b ? `A 2k lead at ${minute} minutes wins ${pct(b.win_rate, 0)}` : `Gold leads at ${minute} minutes`;
+  };
+  const leadLede = () => {
+    const bands = bandsAt(), lanes = [...lanesAt()].sort((a, b) => a.win_rate - b.win_rate);
+    const [small] = bands, big = bands.at(-1), mid = bandFrom(1000);
+    if (!small || !mid || lanes.length < 2) return "";
+    const [worst, ...others] = lanes;
+    return `A lead under 1k gold wins ${pct(small.win_rate, 0)}, barely better than a coin flip. 1–2k wins
+      ${pct(mid.win_rate, 0)} and ${leadBand(big)} wins ${pct(big.win_rate, 0)}. A 1k+ lane lead is worth least for
+      ${ROLE_NAME[worst.role]} (${pct(worst.win_rate, 0)}); leads in the other roles win
+      ${Math.round(others[0].win_rate * 100)}–&#8288;${pct(others.at(-1).win_rate, 0)}.`;
+  };
+  const leadColumns = () => bandsAt().map((b) => rateColumn(b.band_min, b.win_rate, b.win_rate_moe, leadBand(b),
+    `${leadBand(b)} gold ahead at ${minute} min\nWon ${num(b.wins)} of ${num(b.games)} games\n${pct(b.win_rate)} (${moe(b.win_rate_moe)})`, 0)).join("");
+  const laneBars = () => lanesAt().map((r) => `<div class="bar-row" data-key="${r.role}" tabindex="0"
+      data-tip="${esc(`${ROLE_NAME[r.role]} 1k+ gold ahead at ${minute} min\nTheir team won ${num(r.wins)} of ${num(r.games)} games\n${pct(r.win_rate)} (${moe(r.win_rate_moe)})`)}">
+      <span class="bar-label">${ROLE_NAME[r.role]}</span>
+      <span class="bar-track even"><span class="bar" style="--w: ${r.win_rate.toFixed(4)}"></span></span>
+      <span class="bar-value">${pct(r.win_rate)}</span>
+    </div>`).join("");
+  const leadMethod = () => `The leading team's win rate by team gold at ${minute}:00, with the 95% margin of error; the
+    dashed line is 50%. Only games still running count (${num(bandsAt().reduce((s, b) => s + b.games, 0))} at ${minute}
+    minutes, ties left out), so later minutes lean to longer games. A lane lead is a player 1,000+ gold ahead of the
+    opponent in their role. Leads show who is playing better as much as they cause wins.`;
+
+  // Winners against losers: one bar per stat, for the role picked in the slicer.
+  const gapRows = now(gaps);
+  const metrics = [...new Map([...gapRows].sort((a, b) => a.metric_order - b.metric_order).map((g) => [g.metric, g])).values()];
+  const roles = ROLES.slice(1);
+  const gapOf = (metric, role) => gapRows.find((g) => g.metric === metric && g.role === role);
+  const gapScale = Math.max(...gapRows.map((g) => Math.abs(g.gap)));
+  const range = (metric) => {
+    const values = roles.map(([role]) => Math.abs(gapOf(metric, role)?.gap ?? 0) * 100);
+    return `${Math.round(Math.min(...values))}–${Math.round(Math.max(...values))}%`;
+  };
+  let gapRole = roles[0][0];
+  const gapBar = (m) => {
+    const g = gapOf(m.metric, gapRole);
+    if (!g) return `<div class="bar-row" data-key="${esc(m.metric)}"><span class="bar-label">${esc(METRIC_LABEL[m.metric] ?? m.metric)}</span><span class="faint">–</span></div>`;
+    const better = g.lower_is_better ? -g.gap : g.gap;          // + = the winners' way
+    return `<div class="bar-row" data-key="${esc(m.metric)}" tabindex="0"
+        data-tip="${esc(`${METRIC_LABEL[m.metric] ?? m.metric}, ${ROLE_NAME[gapRole]}\nWinners ${statValue(g.winners)}, losers ${statValue(g.losers)}\n${num(g.players)} player records`)}">
+      <span class="bar-label">${esc(METRIC_LABEL[m.metric] ?? m.metric)}</span>
+      <span class="bar-track"><span class="bar${better < 0 ? " against" : ""}" style="--w: ${(Math.abs(g.gap) / gapScale).toFixed(4)}"></span></span>
+      <span class="bar-value">${Math.round(Math.abs(g.gap) * 100)}% ${g.gap < 0 ? "lower" : "higher"}</span>
+    </div>`;
+  };
+  // Changing role only changes each bar's width and label, so the bars slide between roles.
+  const updateGaps = (card) => card.querySelectorAll(".bar-row").forEach((row, i) => {
+    const fresh = document.createElement("div");
+    fresh.innerHTML = gapBar(metrics[i]);
+    const next = fresh.firstElementChild;
+    const bar = row.querySelector(".bar"), nextBar = next.querySelector(".bar");
+    if (!bar || !nextBar) return row.replaceWith(next);
+    bar.style.cssText = nextBar.style.cssText;
+    bar.className = nextBar.className;
+    row.querySelector(".bar-value").textContent = next.querySelector(".bar-value").textContent;
+    row.dataset.tip = next.dataset.tip;
+  });
+
+  // Bans: a column per ban band; picking one lists its most banned champions.
+  const banRows = now(bans);
+  const bands = now(banBands).sort((a, b) => a.band_order - b.band_order);
+  const [topBand] = bands;
+  const bandOf = (b) => (b.ban_rate >= 0.1 ? 1 : b.ban_rate >= 0.03 ? 2 : 3);
+  const mostBanned = [...banRows].sort((a, b) => b.ban_rate - a.ban_rate);
+  const banScale = mostBanned[0]?.ban_rate || 1;
+  const [yLo, yHi] = [0.4, 0.6];
+  const height = (v) => (Math.min(Math.max(v, yLo), yHi) - yLo) / (yHi - yLo);
+  let band = 1;
+  const bandColumns = () => bands.map((b) => `<button class="column" data-band="${b.band_order}" aria-pressed="${b.band_order === band}"
+      data-tip="${esc(`${b.band}\n${num(b.champions)} champions, ${num(b.games)} games\nWon ${pct(b.win_rate, 2)} (${moe(b.win_rate_moe)})`)}">
+      <span class="column-plot">
+        <span class="column-bar" style="--h: ${height(b.win_rate).toFixed(4)}"></span>
+        <span class="whisker" style="--lo: ${height(b.win_rate - b.win_rate_moe).toFixed(4)}; --hi: ${height(b.win_rate + b.win_rate_moe).toFixed(4)}"></span>
+      </span>
+      <strong>${pct(b.win_rate)}</strong>
+      <small>${b.band.replace("Banned in ", "").replace(" of games", "")}</small>
+    </button>`).join("");
+  const banList = () => banRows.filter((b) => bandOf(b) === band).sort((a, b) => b.ban_rate - a.ban_rate).slice(0, 8)
+    .map((b) => {
+      const c = db.champions.get(b.champion_id);
+      return `<div class="ban-row" data-key="${b.champion_id}" tabindex="0"
+          data-tip="${esc(`${b.champion_name}\nBanned in ${pct(b.ban_rate)} of games\nWon ${num(b.wins)} of ${num(b.games)} (${pct(b.win_rate)})`)}">
+        <span class="champ-cell">${c ? champImg(c, "sm") : ""}<span class="name">${esc(b.champion_name)}</span></span>
+        <span class="bar-track"><span class="bar" style="--w: ${(b.ban_rate / banScale).toFixed(4)}"></span></span>
+        <span class="bar-value">${pct(b.ban_rate)}</span>
+        <span class="bar-value">${wr(b.win_rate)}</span>
+      </div>`;
+    }).join("");
+
+  // Small samples: raw against adjusted win rate for the top ten, ranked either way.
+  const ranked = db.tiers.filter((t) => t.tier != null);
+  const prior = Math.round(ranked[0]?.prior_games ?? 0);
+  const byRaw = [...ranked].sort((a, b) => b.win_rate - a.win_rate);
+  const byAdjusted = [...ranked].sort((a, b) => b.adjusted_win_rate - a.adjusted_win_rate);
+  const [luckiest] = byRaw, [leader] = byAdjusted;
+  const shown = [...byRaw.slice(0, 10), ...byAdjusted.slice(0, 10)].flatMap((t) => [t.win_rate, t.adjusted_win_rate]);
+  const [xLo, xHi] = [Math.floor(Math.min(0.5, ...shown) * 20) / 20, Math.ceil(Math.max(...shown) * 20) / 20];
+  const at = (v) => `${(((v - xLo) / (xHi - xLo)) * 100).toFixed(2)}%`;
+  let rankBy = "raw";
+  const dumbbells = () => (rankBy === "raw" ? byRaw : byAdjusted).slice(0, 10).map((t) => {
+    const c = db.champions.get(t.champion_id) ?? { champion_key: "", champion_name: t.champion_name };
+    const [lo, hi] = [Math.min(t.win_rate, t.adjusted_win_rate), Math.max(t.win_rate, t.adjusted_win_rate)];
+    return `<a class="dumbbell" data-key="${t.champion_id}-${t.role}" href="#/champion/${c.champion_key}/${t.role}"
+        data-tip="${esc(`${t.champion_name}, ${ROLE_NAME[t.role]}\nWon ${pct(t.win_rate)} of ${num(t.games)} games\nAdjusted: ${pct(t.adjusted_win_rate)}, tier ${t.tier}`)}">
+      <span class="champ-cell">${champImg(c, "sm")}<span class="name">${esc(t.champion_name)}<small>${ROLE_NAME[t.role]} · ${plural(t.games, "game")}</small></span></span>
+      <span class="dumbbell-track" style="--even: ${at(0.5)}">
+        <span class="dumbbell-line" style="left: ${at(lo)}; width: calc(${at(hi)} - ${at(lo)})"></span>
+        <span class="dot raw" style="left: ${at(t.win_rate)}"></span>
+        <span class="dot adjusted" style="--from: ${at(t.win_rate)}; --to: ${at(t.adjusted_win_rate)}"></span>
+      </span>
+      <span class="bar-value">${pct(t.win_rate)} <span class="faint">→</span> <strong>${pct(t.adjusted_win_rate)}</strong></span>
+    </a>`;
+  }).join("");
+  const axisTicks = Array.from({ length: Math.round((xHi - xLo) * 20) + 1 }, (_, i) => xLo + i * 0.05)
+    .map((v) => `<span style="left: ${at(v)}">${pct(v, 0)}</span>`).join("");
+
+  // Sides and the sample.
+  const [blue, red] = ["Blue", "Red"].map((side) => now(sides).find((s) => s.side === side));
+  const redAhead = red.win_rate >= blue.win_rate;
+  const sideVerdict = Math.abs(red.win_rate - 0.5) > red.win_rate_moe
+    ? `${redAhead ? "Red" : "Blue"} side's lead is bigger than the ${moe(red.win_rate_moe)}-point margin of error, so it's unlikely to be chance.`
+    : `The gap is inside the ${moe(red.win_rate_moe)}-point margin of error, so it could still be chance.`;
+  const ranks = now(sample).sort((a, b) => RANK_ORDER.indexOf(a.sample_tier) - RANK_ORDER.indexOf(b.sample_tier));
+  const rankScale = Math.max(...ranks.map((r) => r.share_of_matches));
+  const passed = checks.filter((c) => c.failures === 0).length;
+
+  view.innerHTML = `<div class="page insights">
+    <div class="hero hero--split">
+      <div>
+        <h1>Key<br>findings</h1>
+        <p>What ${num(db.matches)} Emerald+ solo/duo games on EUW show about patch ${esc(patchName(db.patch))},
+          and how every number on this site is made.</p>
+      </div>
+      ${kpiTriangle(vol)}
+    </div>
+
+    <div class="kpi-strip reveal">
+      ${kpi("Rune choices", vol.rune_choices, "Six per player")}
+      ${kpi("Bans", vol.bans, "Up to ten per match")}
+      ${kpi("Champions played", banRows.length, "Across all five roles")}
+      ${kpi("Days of games", Math.round((new Date(db.lastGame) - new Date(db.firstGame)) / 864e5) + 1, `${dateName(db.firstGame)} – ${dateName(db.lastGame)}`)}
+    </div>
+
+    ${topObjective ? `<section class="card reveal" id="objectives">
+      <div class="card-head">
+        <div>
+          <h2>${esc(objectiveName(topObjective.objective))} wins ${pct(topObjective.win_rate, 0)}</h2>
+          <p class="lede">${secondObjective ? `${esc(objectiveName(secondObjective.objective))} wins ${pct(secondObjective.win_rate, 0)}` : ""}${thirdObjective ? `
+            and ${esc(inSentence(objectiveName(thirdObjective.objective)))} ${pct(thirdObjective.win_rate, 0)}.` : "."}${firstBlood ? `
+            First blood, the earliest fight, wins only ${pct(firstBlood.win_rate, 0)}: an early kill is worth far less
+            than the towers and Barons it can lead to.` : ""}</p>
+        </div>
+      </div>
+      <div class="insight-grid">
+        <div class="bars objective-list">${objectiveRows()}</div>
+        <div class="objective-chart">${objectivePanel()}</div>
+      </div>
+      <p class="method">The win rate of the team that took each objective first, out of games where anyone took it;
+        the dashed line is 50%. Late objectives such as inhibitors fall near the end of a game, so they mark a win as much
+        as they cause one. Pick an objective to chart win rate by how many a team took; the last column includes more.</p>
+    </section>` : ""}
+
+    ${minute ? `<section class="card reveal" id="leads">
+      <div class="card-head">
+        <div>
+          <h2 class="lead-title">${esc(leadTitle())}</h2>
+          <p class="lede lead-lede">${leadLede()}</p>
+        </div>
+        ${slicer(minutes.map((m) => [String(m), `${m} min`]), String(minute), "Minute")}
+      </div>
+      <div class="insight-grid leads-grid">
+        <div>
+          <h3 class="sub-head">Leading team's win rate, by gold lead</h3>
+          <div class="columns lead-columns" style="--n: ${bandsAt().length}; --even: 0.5">${leadColumns()}</div>
+        </div>
+        <div>
+          <h3 class="sub-head">Team win rate with a 1k+ lane lead</h3>
+          <div class="bars lane-bars">${laneBars()}</div>
+        </div>
+      </div>
+      <p class="method lead-method">${leadMethod()}</p>
+    </section>` : ""}
+
+    <section class="card reveal" id="gaps">
+      <div class="card-head">
+        <div>
+          <h2>Winners die ${range("Deaths")} less</h2>
+          <p class="lede">And get ${range("Kills + assists")} more kills and assists. These are results as much as
+            causes: a team that's ahead gets more kills and safer fights.</p>
+        </div>
+        ${slicer(roles, gapRole, "Role")}
+      </div>
+      <div class="bars">${metrics.map(gapBar).join("")}</div>
+      <p class="method">Winning players' average against losing players', in the same role.
+        <span class="swatch"></span> favours the winners, <span class="swatch against"></span> the losers. Hover a bar for the averages.</p>
+    </section>
+
+    <section class="card reveal" id="bans">
+      <div class="card-head">
+        <div>
+          <h2>Bans don't predict wins</h2>
+          <p class="lede">The ${num(topBand.champions)} champions banned in 10%+ of games won ${pct(topBand.win_rate)}
+            of the games they got through, the same as everyone else. Players ban what they find frustrating, not what wins.</p>
+        </div>
+      </div>
+      <div class="ban-grid">
+        <div>
+          <div class="columns" style="--even: ${height(0.5)}">${bandColumns()}</div>
+          <p class="method">Win rate by how often a champion is banned, with the 95% margin of error; the dashed line is 50%. Pick a column to list its champions.</p>
+        </div>
+        <div>
+          <div class="ban-row head" aria-hidden="true"><span>Most banned</span><span></span><span>Banned</span><span>Won</span></div>
+          <div class="ban-list">${banList()}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card reveal" id="samples">
+      <div class="card-head">
+        <div>
+          <h2>Small samples mislead</h2>
+          <p class="lede">${esc(luckiest.champion_name)} won ${pct(luckiest.win_rate)} of only ${num(luckiest.games)} games.
+            The tier list adds ${num(prior)} games at 50% to every record before ranking, so a short lucky run can't top it.
+            ${esc(leader.champion_name)}, at ${pct(leader.win_rate)} over ${num(leader.games)} games, holds up and leads.</p>
+        </div>
+        ${slicer([["raw", "Raw"], ["adjusted", "Adjusted"]], rankBy, "Rank by")}
+      </div>
+      <div class="dumbbell-axis" aria-hidden="true"><span></span><span class="axis-ticks">${axisTicks}</span><span></span></div>
+      <div class="dumbbells">${dumbbells()}</div>
+      <p class="method"><span class="dot-key raw"></span> Raw win rate <span class="dot-key adjusted"></span> after adding
+        ${num(prior)} games at 50%. The dashed line is 50%. Why ${num(prior)}: win rates spread more than chance alone
+        would spread them, and SQL Server measures the real spread between champions on every export (empirical Bayes).</p>
+    </section>
+
+    <div class="grid-2">
+      <section class="card reveal">
+        <h2>${redAhead ? "Red" : "Blue"} side wins ${pct(Math.max(red.win_rate, blue.win_rate))}</h2>
+        <div class="split" data-tip="${esc(`Blue ${num(blue.wins)} wins, red ${num(red.wins)}\nOut of ${num(red.games)} games`)}">
+          <span class="split-blue" style="--w: ${blue.win_rate}"><strong>${pct(blue.win_rate)}</strong>Blue</span>
+          <span class="split-red" style="--w: ${red.win_rate}"><strong>${pct(red.win_rate)}</strong>Red</span>
+        </div>
+        <div class="split-counts">
+          <span><strong>${num(blue.wins)}</strong> blue wins</span>
+          <span><strong>${num(red.wins)}</strong> red wins</span>
+        </div>
+        <p class="method">${sideVerdict} The dashed line is an even split.</p>
+      </section>
+
+      <section class="card reveal">
+        <h2>Sample by rank</h2>
+        <div class="bars ranks">${ranks.map((r) => `<div class="bar-row" tabindex="0" data-tip="${esc(`${RANK_NAME[r.sample_tier] ?? r.sample_tier}\n${num(r.matches)} matches`)}">
+          <span class="bar-label">${RANK_NAME[r.sample_tier] ?? esc(r.sample_tier)}</span>
+          <span class="bar-track"><span class="bar rank-${r.sample_tier.toLowerCase()}" style="--w: ${(r.share_of_matches / rankScale).toFixed(4)}"></span></span>
+          <span class="bar-value">${pct(r.share_of_matches, 0)}</span>
+        </div>`).join("")}</div>
+        <p class="method">Games average ${db.avgMinutes.toFixed(1)} minutes. Each counts under the rank of the player
+          whose match history it came from.</p>
+      </section>
+    </div>
+
+    <section class="card reveal flow-card">
+      <div class="card-head">
+        <div>
+          <h2>From API to dashboard</h2>
+          <p class="lede">Python collects the games, SQL Server models them, and every figure on this site is a T-SQL view.</p>
+        </div>
+      </div>
+      <ol class="flow">
+        <li style="--i: 0">
+          <span class="flow-figure" data-count="${vol.ladder_players}" data-format="num">${num(vol.ladder_players)}</span>
+          <span class="flow-label">Riot API</span>
+          <span>Ladder players scanned for Emerald+ ranked games and timelines, within the API's rate limits.</span>
+        </li>
+        <li style="--i: 1">
+          <span class="flow-figure" data-count="${vol.matches + vol.timelines}" data-format="num">${num(vol.matches + vol.timelines)}</span>
+          <span class="flow-label">SQL Server staging</span>
+          <span>Games and timelines, each stored as it arrived, as compressed raw JSON.</span>
+        </li>
+        <li style="--i: 2">
+          <span class="flow-figure" data-count="${vol.fact_rows}" data-format="compact">${KPI_FORMAT.compact(vol.fact_rows)}</span>
+          <span class="flow-label">T-SQL ETL</span>
+          <span>Fact rows parsed with OPENJSON into a star schema of match, player, item and rune facts.</span>
+        </li>
+        <li style="--i: 3">
+          <span class="flow-figure" data-count="${vol.mart_views}" data-format="num">${num(vol.mart_views)}</span>
+          <span class="flow-label">Mart views</span>
+          <span>T-SQL views compute every rate, tier and build on this site, with window functions.</span>
+        </li>
+        <li style="--i: 4">
+          <span class="flow-figure" data-count="${checks.length}" data-format="num">${num(checks.length)}</span>
+          <span class="flow-label">Checks, then publish</span>
+          <span>Data checks run before each export to the JSON this site reads.</span>
+        </li>
+      </ol>
+      <details class="checks">
+        <summary><span class="pulse" aria-hidden="true"></span>${passed} of ${checks.length} data checks pass${passed < checks.length ? `, ${checks.length - passed} ${checks.some((c) => c.failures && c.is_blocking) ? "flagged" : "warnings"}` : ""}</summary>
+        <ul>${checks.map((c) => `<li><span class="${c.failures === 0 ? "good" : c.is_blocking ? "bad" : "warn"}">${c.failures === 0 ? "✓" : c.is_blocking ? "✗" : "!"}</span>
+          ${esc(c.check_name)}${c.failures ? ` <span class="faint">(${num(c.failures)})</span>` : ""}${c.is_blocking ? "" : ' <span class="faint">· warning only</span>'}</li>`).join("")}</ul>
+      </details>
+    </section>
+  </div>`;
+
+  const el = view.firstElementChild;
+  current = { page: "insights", el };
+  window.scrollTo({ top: 0 });
+  moveIndicator(el);
+  reveal(el);
+
+  const objectiveCard = el.querySelector("#objectives");
+  objectiveCard?.querySelector(".objective-list").addEventListener("click", (e) => {
+    const row = e.target.closest("button[data-key]");
+    if (!row || row.dataset.key === objective) return;
+    objective = row.dataset.key;
+    objectiveCard.querySelectorAll(".objective-list button").forEach((b) => b.setAttribute("aria-pressed", b === row));
+    const chart = objectiveCard.querySelector(".objective-chart");
+    const columnsBefore = chart.querySelectorAll(".column").length;
+    morph(chart, objectivePanel());
+    if (chart.querySelectorAll(".column").length !== columnsBefore) growColumns(chart);
+  });
+  const leadCard = el.querySelector("#leads");
+  if (leadCard) wireSlicer(leadCard.querySelector(".slicer"), (value) => {
+    minute = Number(value);
+    morph(leadCard.querySelector(".lead-title"), esc(leadTitle()));
+    morph(leadCard.querySelector(".lead-lede"), leadLede());
+    morph(leadCard.querySelector(".lead-columns"), leadColumns());
+    morph(leadCard.querySelector(".lane-bars"), laneBars());
+    morph(leadCard.querySelector(".lead-method"), leadMethod());
+  });
+
+  const gapCard = el.querySelector("#gaps");
+  wireSlicer(gapCard.querySelector(".slicer"), (role) => { gapRole = role; updateGaps(gapCard); });
+  const samples = el.querySelector("#samples");
+  wireSlicer(samples.querySelector(".slicer"), (value) => { rankBy = value; reorder(samples.querySelector(".dumbbells"), dumbbells()); });
+  const banCard = el.querySelector("#bans");
+  banCard.querySelector(".columns").addEventListener("click", (e) => {
+    const column = e.target.closest("[data-band]");
+    if (!column || Number(column.dataset.band) === band) return;
+    band = Number(column.dataset.band);
+    banCard.querySelectorAll("[data-band]").forEach((c) => c.setAttribute("aria-pressed", c === column));
+    reorder(banCard.querySelector(".ban-list"), banList());
+  });
+}
+
 function renderNotFound(message = "That page doesn't exist.") {
   current = null;
   view.innerHTML = `<div class="page hero"><h1>Not found</h1><p>${esc(message)}</p><p><a class="good" href="#/">Back to the tier list</a></p></div>`;
@@ -406,8 +1128,15 @@ function renderNotFound(message = "That page doesn't exist.") {
 function route() {
   const ticket = ++navigation;
   const [, page, a, b] = (location.hash || "#/").split("/");
+  const section = page === "insights" ? "insights" : "tiers";
+  document.querySelectorAll("[data-nav]").forEach((link) => link.toggleAttribute("aria-current", link.dataset.nav === section));
   if (!page) return renderTierList("ALL");
   if (page === "role" && ROLE_NAME[a] && a !== "ALL") return renderTierList(a);
+  if (page === "insights") {
+    return renderInsights(ticket).catch((error) => {
+      if (ticket === navigation) renderNotFound(`Couldn't load the insights (${error.message}).`);
+    });
+  }
   if (page === "champion" && a) {
     return renderChampion(decodeURIComponent(a), b, ticket).catch((error) => {
       if (ticket === navigation) renderNotFound(`Couldn't load the champion data (${error.message}).`);
@@ -421,6 +1150,24 @@ window.addEventListener("hashchange", () => {
   route();
 });
 window.addEventListener("resize", () => current && moveIndicator(current.el));
+
+// "/" jumps to the champion search, wherever the tier list is on screen.
+document.addEventListener("keydown", (e) => {
+  const search = document.querySelector(".search input");
+  if (e.key !== "/" || !search || e.target.closest("input, textarea")) return;
+  e.preventDefault();
+  search.focus();
+});
+
+// The portfolio's nav: frosted once scrolled, with an orange reading-progress line.
+const nav = document.querySelector(".site-nav");
+const onScroll = () => {
+  const max = document.documentElement.scrollHeight - innerHeight;
+  nav.classList.toggle("is-scrolled", scrollY > 24);
+  nav.style.setProperty("--progress", max > 0 ? (scrollY / max).toFixed(4) : 0);
+};
+window.addEventListener("scroll", onScroll, { passive: true });
+new ResizeObserver(onScroll).observe(document.body);
 
 init()
   .then(route)
