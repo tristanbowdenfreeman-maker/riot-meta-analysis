@@ -20,7 +20,7 @@ if git diff --cached --quiet -- league; then
   echo "publish: the League page is already up to date"
   exit 0
 fi
-matches=$(python3 -c 'import json, sys; print(f"{json.load(open(sys.argv[1]))[0][\"matches\"]:,}")' league/data/patch_summary.json)
+matches=$(python3 -c 'import json, sys; print(format(json.load(open(sys.argv[1]))[0]["matches"], ","))' league/data/patch_summary.json)
 git commit -q -m "Refresh League statistics: $matches matches" -- league
 git pull -q --rebase --autostash
 git push -q
