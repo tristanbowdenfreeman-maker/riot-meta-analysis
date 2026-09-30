@@ -3,7 +3,8 @@
 #
 # Each round queues more EUW matches (finding more players once the known ones run out),
 # downloads them and their timelines, loads them into the fact tables, runs the data checks and,
-# if they pass, re-exports site/data. Every stage resumes where it stopped, so the script can be
+# if they pass, re-exports site/data and publishes it to the portfolio (scripts/publish.sh).
+# Every stage resumes where it stopped, so the script can be
 # killed and restarted at any time. When the Riot key expires it waits and retries every
 # 5 minutes: put a new key in .env and it carries on.
 #
@@ -49,7 +50,10 @@ while true; do
   run fetch-timelines || { wait_after_failure; continue; }
   run transform || { wait_after_failure; continue; }
   if run check; then
-    run export >/dev/null && stamp "Exported site/data"
+    if run export >/dev/null; then
+      stamp "Exported site/data"
+      scripts/publish.sh || stamp "Publishing to the portfolio failed; it will retry next round."
+    fi
   else
     stamp "A blocking data check failed, so site/data was not updated. Collection carries on."
   fi
