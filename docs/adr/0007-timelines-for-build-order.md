@@ -26,5 +26,7 @@ Views then:
 - ~1.7 GB of compressed timelines at 30,000 matches.
 - Build-order views only count matches whose timeline loaded (`fact.match_timeline`), so a
   missing timeline never looks like a player who bought nothing.
-- The final-inventory item stats (`mart.v_champion_item_stats`) stay; the item-pairs view they
-  replaced is gone.
+- The final-inventory item stats (`mart.v_champion_item_stats`) stay in SQL for analysis; the
+  item-pairs view they replaced is gone. Since 2026-09-30 they are no longer exported, as the
+  site never showed them (items still held at the end favour long games, so their win rates
+  can mislead).

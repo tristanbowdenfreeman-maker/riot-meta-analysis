@@ -1,6 +1,6 @@
 # 8. One late-items list instead of 4th, 5th and 6th item
 
-**Status:** accepted, 2026-09-30. Amends [0007](0007-timelines-for-build-order.md).
+**Status:** accepted, 2026-09-30. Amends [0007](0007-timelines-for-build-order.md); amended by [0010](0010-fill-build-and-matchup-panels.md).
 
 ## Context
 

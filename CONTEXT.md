@@ -53,14 +53,40 @@ over clever ones.
 - **Item number** (1st item, 2nd item...): completed items numbered in the order they were first
   bought. Boots are not counted.
 - **Core build**: a player's 1st, 2nd and 3rd completed items, in that order.
+- **Core items**: the three items a champion's players most often finish 1st, 2nd or 3rd, shown in
+  the order they usually come. Shown on the site instead of exact core builds
+  ([ADR 0010](docs/adr/0010-fill-build-and-matchup-panels.md),
+  [ADR 0012](docs/adr/0012-three-core-items.md)).
+- **After the core**: every other item the champion's players finish, at any point, as a share of
+  all their games with a timeline ([ADR 0012](docs/adr/0012-three-core-items.md)).
+- **Counter picks** ("Does best vs" / "Does worst vs"): lane opponents with 5+ games, ranked by
+  win rate pulled towards the champion's own ([ADR 0013](docs/adr/0013-counter-picks.md)).
+- **Headline figures**: the size of the data behind a patch (`mart.v_data_volume`): matches,
+  player records, item events, rune choices, bans, fact rows and mart views
+  ([ADR 0011](docs/adr/0011-dark-theme-and-insights-dashboard.md)).
 - **Pick share**: within a champion and role, the share of games using that option (a rune, a
   starter set, a core build). For item numbers, it's the share of players who reached that number.
 - **Keystone**: the first rune in the primary rune tree.
 - **Stat shards**: the three small bonuses under the rune trees (offense, flex, defense rows).
 - **Rune page**: a keystone plus a secondary tree. The rune grid and shards on the website are
   shown for each of a champion's two most played pages, out of that page's games.
-- **Adjusted win rate**: (wins + 50) / (games + 100). Adding 50 wins and 50 losses pulls small
-  samples towards 50%, so a lucky 18-12 doesn't outrank a solid 159-141.
+- **Adjusted win rate**: (wins + prior_games / 2) / (games + prior_games). Adding prior_games games
+  at 50% pulls small samples towards 50%, so a lucky 38-18 doesn't outrank a solid 211-153.
+  prior_games is estimated from the data on every export (about 255 at 3,000 matches); see
+  [ADR 0009](docs/adr/0009-estimate-the-tier-list-prior.md).
+- **Margin of error**: 1.96 standard errors of a win rate, sqrt(p(1 - p) / games): the range
+  that would hold the true win rate 95% of the time.
+- **Winners vs losers gap**: the winners' average of a stat divided by the losers' average, minus
+  1, per role (Insights page). It describes what winning looks like, not what causes it.
+- **Team objective**: one team's record for one objective in a match (tower, inhibitor, dragon,
+  void grubs, Rift Herald, Baron, champion kills): whether it took it first, and how many it took
+  (`fact.team_objective`). "First blood" is the champion objective taken first
+  ([ADR 0014](docs/adr/0014-objectives-and-gold-leads.md)).
+- **Gold frame**: a player's total gold, XP and creep score at 10, 15, 20 or 25 minutes, from the
+  timeline (`fact.participant_frame`).
+- **Gold lead**: one team's total gold minus the other's at a minute mark. The lead band's win rate
+  is the leading team's.
+- **Lane lead**: a player 1,000+ gold ahead of the opponent in the same role at a minute mark.
 - **Tier**: rank by adjusted win rate within a role, cut by percentile: OP (top 5%), 1 (next 15%),
   2 (next 25%), 3 (next 30%), 4 (next 17%), 5 (bottom 8%). Only champion/role pairs with a pick
   rate of at least 1% (30 games at 3,000 matches) that make up at least 10% of the champion's games get a tier.
@@ -73,6 +99,7 @@ over clever ones.
 | `dim` | Champion, item, rune and spell names and icons from Data Dragon; stat shards | `etl.usp_load_ddragon` |
 | `fact` | Matches, player records, items, runes and bans parsed from the raw JSON | `etl.usp_load_matches` |
 | `fact` | Shop events parsed from the timelines | `etl.usp_load_timelines` |
+| `fact` | Team objectives from the matches; gold frames from the timelines | `etl.usp_load_objectives`, `etl.usp_load_frames` |
 | `mart` | Reporting views, one per table on the website | Views over `fact` and `dim` |
 | `etl` | Procedures and data-quality checks | |
 

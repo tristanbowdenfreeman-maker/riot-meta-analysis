@@ -5,7 +5,12 @@ Emerald+ ranked solo/duo on EUW, one patch at a time.
 
 Python fetches matches and their timelines from the Riot Games API and stores the raw JSON in
 SQL Server. T-SQL parses it into a star schema and reporting views, which are exported to JSON
-for a static website.
+for a static website: a tier list, a page per champion, and an Insights page with findings
+(which objectives and gold leads win games, what separates winners from losers, whether the most
+banned champions win more) and how the tier list deals with small samples.
+
+**Live:** https://tristanbowdenfreeman-maker.github.io/tiny-summit/league/ (part of my
+[portfolio](https://tristanbowdenfreeman-maker.github.io/tiny-summit/)).
 
 ```
 Riot Games API ──► Python fetcher ──► stg (raw match + timeline JSON, fetch queue)
