@@ -3,5 +3,4 @@ python-dotenv>=1.0
 pymssql>=2.3
 SQLAlchemy>=2.0
 pandas>=2.2
-pyarrow>=17.0
 pytest>=8.0

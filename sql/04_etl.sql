@@ -73,25 +73,28 @@ BEGIN
         FROM OPENJSON(ISNULL(i.tags, N'[]')) AS tg
     ) AS t;
 
-    -- runesReforged.json: [{"id": 8100, "name": "Domination", "slots": [{"runes": [{"id": 8112, "name": ...}]}]}]
+    -- runesReforged.json: [{"id": 8100, "name": "Domination", "icon": "perk-images/...",
+    --                      "slots": [{"runes": [{"id": 8112, "name": ..., "icon": ...}]}]}]
     DELETE FROM dim.rune;
     DELETE FROM dim.rune_tree;
-    INSERT INTO dim.rune_tree (tree_id, tree_name, ddragon_version)
-    SELECT tr.id, tr.name, @ddragon_version
-    FROM OPENJSON(@runes) WITH (id INT '$.id', name NVARCHAR(30) '$.name') AS tr;
+    INSERT INTO dim.rune_tree (tree_id, tree_name, icon_path, ddragon_version)
+    SELECT tr.id, tr.name, tr.icon, @ddragon_version
+    FROM OPENJSON(@runes) WITH (id INT '$.id', name NVARCHAR(30) '$.name', icon VARCHAR(200) '$.icon') AS tr;
 
-    INSERT INTO dim.rune (rune_id, rune_name, tree_id, slot_index, ddragon_version)
-    SELECT r.id, r.name, tr.id, CAST(s.[key] AS TINYINT), @ddragon_version
+    INSERT INTO dim.rune (rune_id, rune_name, tree_id, slot_index, icon_path, ddragon_version)
+    SELECT r.id, r.name, tr.id, CAST(s.[key] AS TINYINT), r.icon, @ddragon_version
     FROM OPENJSON(@runes) WITH (id INT '$.id', slots NVARCHAR(MAX) '$.slots' AS JSON) AS tr
     CROSS APPLY OPENJSON(tr.slots) AS s
-    CROSS APPLY OPENJSON(s.value, '$.runes') WITH (id INT '$.id', name NVARCHAR(60) '$.name') AS r;
+    CROSS APPLY OPENJSON(s.value, '$.runes')
+        WITH (id INT '$.id', name NVARCHAR(60) '$.name', icon VARCHAR(200) '$.icon') AS r;
 
-    -- summoner.json: {"data": {"SummonerFlash": {"key": "4", "name": "Flash"}}}
+    -- summoner.json: {"data": {"SummonerFlash": {"id": "SummonerFlash", "key": "4", "name": "Flash"}}}
     DELETE FROM dim.summoner_spell;
-    INSERT INTO dim.summoner_spell (spell_id, spell_name, ddragon_version)
-    SELECT CAST(sp.spell_key AS INT), sp.name, @ddragon_version
+    INSERT INTO dim.summoner_spell (spell_id, spell_key, spell_name, ddragon_version)
+    SELECT CAST(sp.spell_num AS INT), sp.id, sp.name, @ddragon_version
     FROM OPENJSON(@spells, '$.data') AS d
-    CROSS APPLY OPENJSON(d.value) WITH (spell_key VARCHAR(10) '$.key', name NVARCHAR(40) '$.name') AS sp;
+    CROSS APPLY OPENJSON(d.value)
+        WITH (id VARCHAR(40) '$.id', spell_num VARCHAR(10) '$.key', name NVARCHAR(40) '$.name') AS sp;
 
     COMMIT TRANSACTION;
 
@@ -212,12 +215,15 @@ BEGIN
         INSERT INTO fact.match_participant (
             match_id, participant_id, puuid, team_id, champion_id, team_position, win, kills, deaths, assists,
             gold_earned, creep_score, vision_score, damage_to_champions, summoner1_id, summoner2_id,
-            primary_tree_id, secondary_tree_id, keystone_id)
+            primary_tree_id, secondary_tree_id, keystone_id, shard_offense_id, shard_flex_id, shard_defense_id)
         SELECT match_id, participant_id, puuid, team_id, champion_id, team_position, win, kills, deaths, assists,
                gold_earned, creep_score, vision_score, damage_to_champions, summoner1_id, summoner2_id,
                JSON_VALUE(perks, '$.styles[0].style'),
                JSON_VALUE(perks, '$.styles[1].style'),
-               JSON_VALUE(perks, '$.styles[0].selections[0].perk')
+               JSON_VALUE(perks, '$.styles[0].selections[0].perk'),
+               JSON_VALUE(perks, '$.statPerks.offense'),
+               JSON_VALUE(perks, '$.statPerks.flex'),
+               JSON_VALUE(perks, '$.statPerks.defense')
         FROM #participant;
 
         -- Unpivot the seven item columns into rows; 0 means an empty slot.
@@ -257,8 +263,78 @@ END;
 GO
 
 ------------------------------------------------------------------------------------------
--- Empties the fact tables so every raw match is re-parsed on the next load.
--- Use after changing etl.usp_load_matches.
+-- Raw timelines -> fact.item_event. Incremental like usp_load_matches, and only for matches
+-- already in fact.match. Timelines are ~0.5 MB of JSON each, hence the smaller batches.
+------------------------------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE etl.usp_load_timelines
+    @batch_size INT = 100
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @batch_rows INT, @total_rows INT = 0;
+
+    CREATE TABLE #batch (
+        match_id  VARCHAR(30)   NOT NULL PRIMARY KEY,
+        payload   NVARCHAR(MAX) NOT NULL
+    );
+
+    WHILE 1 = 1
+    BEGIN
+        TRUNCATE TABLE #batch;
+
+        INSERT INTO #batch (match_id, payload)
+        SELECT TOP (@batch_size) r.match_id, r.payload
+        FROM stg.v_timeline_raw AS r
+        WHERE EXISTS (SELECT 1 FROM fact.match AS m WHERE m.match_id = r.match_id)
+          AND NOT EXISTS (SELECT 1 FROM fact.match_timeline AS t WHERE t.match_id = r.match_id)
+        ORDER BY r.match_id;
+
+        SET @batch_rows = @@ROWCOUNT;
+        IF @batch_rows = 0 BREAK;
+
+        BEGIN TRANSACTION;
+
+        INSERT INTO fact.match_timeline (match_id)
+        SELECT match_id FROM #batch;
+
+        -- info.frames[] is one frame per minute; each frame has an events[] array in time order.
+        -- participantId 0 is the game itself (e.g. items granted at the start) and is skipped.
+        INSERT INTO fact.item_event (match_id, event_seq, participant_id, timestamp_ms, event_type, item_id)
+        SELECT b.match_id,
+               CAST(f.[key] AS INT) * 10000 + CAST(e.[key] AS INT),
+               ev.participantId,
+               ev.[timestamp],
+               ev.[type],
+               IIF(ev.[type] = 'ITEM_UNDO', ev.beforeId, ev.itemId)
+        FROM #batch AS b
+        CROSS APPLY OPENJSON(b.payload, '$.info.frames') AS f
+        CROSS APPLY OPENJSON(f.value, '$.events') AS e
+        CROSS APPLY OPENJSON(e.value) WITH (
+            [type]         VARCHAR(40),
+            participantId  TINYINT,
+            [timestamp]    INT,
+            itemId         INT,
+            beforeId       INT
+        ) AS ev
+        WHERE ev.[type] IN ('ITEM_PURCHASED', 'ITEM_SOLD', 'ITEM_UNDO')
+          AND ev.participantId BETWEEN 1 AND 10
+          -- An undo with beforeId 0 reverts a sale rather than a purchase; purchases are what we count.
+          AND IIF(ev.[type] = 'ITEM_UNDO', ev.beforeId, ev.itemId) > 0;
+
+        COMMIT TRANSACTION;
+
+        SET @total_rows += @batch_rows;
+    END;
+
+    SELECT @total_rows AS timelines_loaded;
+END;
+GO
+
+------------------------------------------------------------------------------------------
+-- Empties the fact tables so every raw match and timeline is re-parsed on the next load.
+-- Use after changing etl.usp_load_matches or etl.usp_load_timelines.
 ------------------------------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE etl.usp_reset_facts
 AS
@@ -267,6 +343,8 @@ BEGIN
     SET XACT_ABORT ON;
 
     BEGIN TRANSACTION;
+    DELETE FROM fact.item_event;
+    DELETE FROM fact.match_timeline;
     DELETE FROM fact.participant_rune;
     DELETE FROM fact.participant_item;
     DELETE FROM fact.match_ban;

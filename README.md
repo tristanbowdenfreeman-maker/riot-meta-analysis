@@ -3,18 +3,18 @@
 Champion, item, rune and summoner spell stats for League of Legends, built from the Riot Games API.
 Emerald+ ranked solo/duo on EUW, one patch at a time.
 
-Python fetches match data from the Riot Games API and stores the raw JSON in SQL Server. T-SQL
-parses it into a star schema and reporting views, which are exported to Parquet for a Streamlit
-dashboard.
+Python fetches matches and their timelines from the Riot Games API and stores the raw JSON in
+SQL Server. T-SQL parses it into a star schema and reporting views, which are exported to JSON
+for a static website.
 
 ```
-Riot Games API ──► Python fetcher ──► stg (raw JSON, fetch queue)
+Riot Games API ──► Python fetcher ──► stg (raw match + timeline JSON, fetch queue)
 Data Dragon    ──►                     │  OPENJSON in stored procedures
                                        ▼
                                   dim + fact (star schema)
                                        │  views
                                        ▼
-                                  mart ──► Parquet ──► Streamlit
+                                  mart ──► JSON ──► static site (GitHub Pages)
 ```
 
 - Definitions and scope: [CONTEXT.md](CONTEXT.md)
@@ -36,9 +36,10 @@ python -m riot_meta ddragon           # champion/item/rune/spell names
 python -m riot_meta discover          # Emerald+ players
 python -m riot_meta queue --since 2026-09-24 --target 3000
 python -m riot_meta fetch             # resumable; re-run after a stop or key expiry
+python -m riot_meta fetch-timelines   # item purchase order; also resumable
 python -m riot_meta transform         # raw JSON -> fact tables
 python -m riot_meta check             # data-quality checks
-python -m riot_meta export            # mart views -> data/marts/*.parquet
+python -m riot_meta export            # mart views -> site/data/*.json
 python -m riot_meta status            # row counts at every stage
 ```
 

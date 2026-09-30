@@ -50,11 +50,19 @@ def cmd_fetch(settings, args):
     print(f"Fetched {fetched} matches")
 
 
+def cmd_fetch_timelines(settings, args):
+    with connect(settings) as conn:
+        fetched = pipeline.fetch_timelines(_client(settings), conn, args.limit)
+    print(f"Fetched {fetched} timelines")
+
+
 def cmd_transform(settings, args):
     with connect(settings) as conn:
         cursor = conn.cursor()
         cursor.execute("EXEC etl.usp_load_matches")
         print(f"Loaded {cursor.fetchone()[0]} new matches into the fact tables")
+        cursor.execute("EXEC etl.usp_load_timelines")
+        print(f"Loaded {cursor.fetchone()[0]} new timelines into fact.item_event")
 
 
 def cmd_check(settings, args):
@@ -88,8 +96,11 @@ def cmd_status(settings, args):
             UNION ALL SELECT 'players with match IDs fetched', COUNT(*) FROM stg.player WHERE match_ids_fetched_at IS NOT NULL
             UNION ALL SELECT 'queue: ' + status, COUNT(*) FROM stg.match_queue GROUP BY status
             UNION ALL SELECT 'raw matches', COUNT(*) FROM stg.match_raw
+            UNION ALL SELECT 'timelines: ' + status, COUNT(*) FROM stg.timeline_raw GROUP BY status
             UNION ALL SELECT 'fact matches', COUNT(*) FROM fact.match
             UNION ALL SELECT 'fact player records', COUNT(*) FROM fact.match_participant
+            UNION ALL SELECT 'fact timelines', COUNT(*) FROM fact.match_timeline
+            UNION ALL SELECT 'fact item events', COUNT(*) FROM fact.item_event
             """
         )
         _print_rows(cursor)
@@ -122,9 +133,15 @@ def main() -> None:
     p.add_argument("--limit", type=int, help="stop after this many matches")
     p.set_defaults(func=cmd_fetch)
 
-    sub.add_parser("transform", help="parse new raw matches into the fact tables").set_defaults(func=cmd_transform)
+    p = sub.add_parser("fetch-timelines", help="download the timeline of every fetched match")
+    p.add_argument("--limit", type=int, help="stop after this many timelines")
+    p.set_defaults(func=cmd_fetch_timelines)
+
+    sub.add_parser("transform", help="parse new raw matches and timelines into the fact tables").set_defaults(
+        func=cmd_transform
+    )
     sub.add_parser("check", help="run data-quality checks").set_defaults(func=cmd_check)
-    sub.add_parser("export", help="export mart views to data/marts/*.parquet").set_defaults(func=cmd_export)
+    sub.add_parser("export", help="export mart views to site/data/*.json").set_defaults(func=cmd_export)
     sub.add_parser("status", help="row counts for every stage").set_defaults(func=cmd_status)
 
     args = parser.parse_args()

@@ -24,7 +24,7 @@ def connect(settings: Settings, database: str | None = None, autocommit: bool = 
 
 
 def engine(settings: Settings) -> Engine:
-    """SQLAlchemy engine, used by pandas for the Parquet export."""
+    """SQLAlchemy engine, used by pandas for the JSON export."""
     return create_engine(
         URL.create(
             "mssql+pymssql",

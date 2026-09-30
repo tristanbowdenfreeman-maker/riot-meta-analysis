@@ -1,6 +1,6 @@
 # 3. Export marts to Parquet for a hosted Streamlit dashboard
 
-**Status:** accepted, 2026-09-30
+**Status:** superseded by [0006](0006-static-site-instead-of-streamlit.md), 2026-09-30
 
 ## Context
 

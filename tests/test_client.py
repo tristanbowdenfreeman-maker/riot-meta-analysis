@@ -80,6 +80,12 @@ def test_client_sends_key_and_routes_to_correct_hosts():
     assert session.calls[1][1] == {"queue": 420, "type": "ranked", "startTime": 1700000000, "count": 5}
 
 
+def test_client_fetches_timeline_from_region_host():
+    client, session, _ = make_client([FakeResponse(200, '{"info": {"frames": []}}')])
+    assert client.match_timeline_json("EUW1_1") == '{"info": {"frames": []}}'
+    assert session.calls[0][0] == "https://europe.api.riotgames.com/lol/match/v5/matches/EUW1_1/timeline"
+
+
 def test_client_waits_for_retry_after_on_429():
     client, _, sleeps = make_client([FakeResponse(429, headers={"Retry-After": "7"}), FakeResponse(200, '{"info": {}}')])
     assert client.match_json("EUW1_1") == '{"info": {}}'

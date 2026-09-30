@@ -1,5 +1,6 @@
 -- Reporting views. Every view is per patch and excludes remakes and non-solo/duo games.
--- The dashboard reads these (via the Parquet export) and applies its own minimum-games cutoff.
+-- The website reads these (via the JSON export) and applies its own minimum-games cutoff.
+-- pick_share columns are shares of the champion's games in that role.
 
 -- Matches that count towards the stats.
 CREATE OR ALTER VIEW mart.v_valid_match
@@ -114,36 +115,182 @@ JOIN mart.v_champion_role_stats AS cr
 GROUP BY o.patch, o.champion_id, o.role, o.item_id, d.item_name, d.item_class, cr.games, cr.win_rate;
 GO
 
--- Pairs of completed items finished together, the closest thing to a "core build" without timelines.
-CREATE OR ALTER VIEW mart.v_champion_item_pairs
+------------------------------------------------------------------------------------------
+-- Build order, from the timeline (docs/adr/0007)
+------------------------------------------------------------------------------------------
+
+-- Player records in valid matches whose timeline has been loaded: the base for every
+-- build-order view, so shares are out of players we can actually see the purchases of.
+CREATE OR ALTER VIEW mart.v_timeline_participant
 AS
-WITH owned AS (
-    SELECT DISTINCT m.patch, p.match_id, p.participant_id, p.champion_id, p.team_position AS role, p.win, i.item_id
-    FROM mart.v_valid_match AS m
-    JOIN fact.match_participant AS p ON p.match_id = m.match_id
-    JOIN fact.participant_item AS i ON i.match_id = p.match_id AND i.participant_id = p.participant_id
-    JOIN dim.item AS d ON d.item_id = i.item_id
-    WHERE p.team_position IS NOT NULL
-      AND d.item_class = 'Completed'
+SELECT m.patch, p.match_id, p.participant_id, p.champion_id, p.team_position AS role, p.win
+FROM mart.v_valid_match AS m
+JOIN fact.match_timeline AS t ON t.match_id = m.match_id
+JOIN fact.match_participant AS p ON p.match_id = m.match_id
+WHERE p.team_position IS NOT NULL;
+GO
+
+-- Purchases that were not undone. An undo reverts the most recent purchase of that item, so a
+-- purchase counts as undone when an undo of the same item follows it before the item is bought
+-- again. (Two purchases of the same item followed by two undos would keep the first one; that
+-- only happens with consumables and doesn't affect completed items.)
+CREATE OR ALTER VIEW mart.v_item_purchase
+AS
+WITH purchase AS (
+    SELECT e.match_id, e.participant_id, e.item_id, e.event_seq, e.timestamp_ms,
+           LEAD(e.event_seq) OVER (PARTITION BY e.match_id, e.participant_id, e.item_id
+                                   ORDER BY e.event_seq) AS next_purchase_seq
+    FROM fact.item_event AS e
+    WHERE e.event_type = 'ITEM_PURCHASED'
 )
-SELECT a.patch,
-       a.champion_id,
-       a.role,
-       a.item_id                                            AS item1_id,
-       d1.item_name                                         AS item1_name,
-       b.item_id                                            AS item2_id,
-       d2.item_name                                         AS item2_name,
+SELECT p.match_id, p.participant_id, p.item_id, p.event_seq, p.timestamp_ms
+FROM purchase AS p
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM fact.item_event AS u
+    WHERE u.match_id = p.match_id
+      AND u.participant_id = p.participant_id
+      AND u.item_id = p.item_id
+      AND u.event_type = 'ITEM_UNDO'
+      AND u.event_seq > p.event_seq
+      AND (p.next_purchase_seq IS NULL OR u.event_seq < p.next_purchase_seq)
+);
+GO
+
+-- Each player's completed items numbered in the order they were first bought (1st item, 2nd item...).
+CREATE OR ALTER VIEW mart.v_completed_item_order
+AS
+SELECT x.match_id, x.participant_id, x.item_id,
+       ROW_NUMBER() OVER (PARTITION BY x.match_id, x.participant_id ORDER BY x.first_seq) AS item_number
+FROM (
+    SELECT ip.match_id, ip.participant_id, ip.item_id, MIN(ip.event_seq) AS first_seq
+    FROM mart.v_item_purchase AS ip
+    JOIN dim.item AS d ON d.item_id = ip.item_id
+    WHERE d.item_class = 'Completed'
+    GROUP BY ip.match_id, ip.participant_id, ip.item_id
+) AS x;
+GO
+
+-- Starter sets: everything bought (and kept) in the first 90 seconds, except the trinket.
+-- starter_items lists item_id:quantity pairs, e.g. '1055:1,2003:1' = Doran's Blade + Health Potion.
+CREATE OR ALTER VIEW mart.v_champion_starter_sets
+AS
+WITH starter_item AS (
+    SELECT ip.match_id, ip.participant_id, ip.item_id, COUNT(*) AS quantity
+    FROM mart.v_item_purchase AS ip
+    LEFT JOIN dim.item AS d ON d.item_id = ip.item_id
+    WHERE ip.timestamp_ms < 90000
+      AND ISNULL(d.item_class, '') <> 'Trinket'
+    GROUP BY ip.match_id, ip.participant_id, ip.item_id
+),
+starter_set AS (
+    SELECT match_id, participant_id,
+           STRING_AGG(CONCAT(item_id, ':', quantity), ',') WITHIN GROUP (ORDER BY item_id) AS starter_items
+    FROM starter_item
+    GROUP BY match_id, participant_id
+),
+base AS (
+    SELECT patch, champion_id, role, COUNT(*) AS games
+    FROM mart.v_timeline_participant
+    GROUP BY patch, champion_id, role
+)
+SELECT tp.patch,
+       tp.champion_id,
+       tp.role,
+       s.starter_items,
        COUNT(*)                                             AS games,
-       SUM(CAST(a.win AS INT))                              AS wins,
-       CAST(SUM(CAST(a.win AS INT)) AS FLOAT) / COUNT(*)    AS win_rate
-FROM owned AS a
-JOIN owned AS b
-  ON b.match_id = a.match_id
- AND b.participant_id = a.participant_id
- AND b.item_id > a.item_id                -- each pair once, never an item with itself
-JOIN dim.item AS d1 ON d1.item_id = a.item_id
-JOIN dim.item AS d2 ON d2.item_id = b.item_id
-GROUP BY a.patch, a.champion_id, a.role, a.item_id, d1.item_name, b.item_id, d2.item_name;
+       SUM(CAST(tp.win AS INT))                             AS wins,
+       CAST(SUM(CAST(tp.win AS INT)) AS FLOAT) / COUNT(*)   AS win_rate,
+       CAST(COUNT(*) AS FLOAT) / MAX(b.games)               AS pick_share
+FROM mart.v_timeline_participant AS tp
+JOIN starter_set AS s ON s.match_id = tp.match_id AND s.participant_id = tp.participant_id
+JOIN base AS b ON b.patch = tp.patch AND b.champion_id = tp.champion_id AND b.role = tp.role
+GROUP BY tp.patch, tp.champion_id, tp.role, s.starter_items;
+GO
+
+-- First pair of boots bought (tier 2 boots; the 300-gold Boots component is not in the Boots class).
+CREATE OR ALTER VIEW mart.v_champion_boots
+AS
+WITH first_boots AS (
+    SELECT ip.match_id, ip.participant_id, ip.item_id,
+           ROW_NUMBER() OVER (PARTITION BY ip.match_id, ip.participant_id ORDER BY ip.event_seq) AS n
+    FROM mart.v_item_purchase AS ip
+    JOIN dim.item AS d ON d.item_id = ip.item_id
+    WHERE d.item_class = 'Boots'
+),
+base AS (
+    SELECT patch, champion_id, role, COUNT(*) AS games
+    FROM mart.v_timeline_participant
+    GROUP BY patch, champion_id, role
+)
+SELECT tp.patch,
+       tp.champion_id,
+       tp.role,
+       fb.item_id,
+       d.item_name,
+       COUNT(*)                                             AS games,
+       SUM(CAST(tp.win AS INT))                             AS wins,
+       CAST(SUM(CAST(tp.win AS INT)) AS FLOAT) / COUNT(*)   AS win_rate,
+       CAST(COUNT(*) AS FLOAT) / MAX(b.games)               AS pick_share
+FROM mart.v_timeline_participant AS tp
+JOIN first_boots AS fb ON fb.match_id = tp.match_id AND fb.participant_id = tp.participant_id AND fb.n = 1
+JOIN dim.item AS d ON d.item_id = fb.item_id
+JOIN base AS b ON b.patch = tp.patch AND b.champion_id = tp.champion_id AND b.role = tp.role
+GROUP BY tp.patch, tp.champion_id, tp.role, fb.item_id, d.item_name;
+GO
+
+-- Core builds: the first three completed items, in order. Only players who finished three.
+CREATE OR ALTER VIEW mart.v_champion_core_builds
+AS
+WITH core AS (
+    SELECT match_id, participant_id,
+           MAX(CASE WHEN item_number = 1 THEN item_id END) AS item1_id,
+           MAX(CASE WHEN item_number = 2 THEN item_id END) AS item2_id,
+           MAX(CASE WHEN item_number = 3 THEN item_id END) AS item3_id
+    FROM mart.v_completed_item_order
+    WHERE item_number <= 3
+    GROUP BY match_id, participant_id
+    HAVING COUNT(*) = 3
+),
+base AS (
+    SELECT patch, champion_id, role, COUNT(*) AS games
+    FROM mart.v_timeline_participant
+    GROUP BY patch, champion_id, role
+)
+SELECT tp.patch,
+       tp.champion_id,
+       tp.role,
+       c.item1_id,
+       c.item2_id,
+       c.item3_id,
+       COUNT(*)                                             AS games,
+       SUM(CAST(tp.win AS INT))                             AS wins,
+       CAST(SUM(CAST(tp.win AS INT)) AS FLOAT) / COUNT(*)   AS win_rate,
+       CAST(COUNT(*) AS FLOAT) / MAX(b.games)               AS pick_share
+FROM mart.v_timeline_participant AS tp
+JOIN core AS c ON c.match_id = tp.match_id AND c.participant_id = tp.participant_id
+JOIN base AS b ON b.patch = tp.patch AND b.champion_id = tp.champion_id AND b.role = tp.role
+GROUP BY tp.patch, tp.champion_id, tp.role, c.item1_id, c.item2_id, c.item3_id;
+GO
+
+-- Which item players build as their 1st, 2nd ... 6th completed item. pick_share here is the
+-- share of players who reached that item number, so each item_number's rows add up to 1.
+CREATE OR ALTER VIEW mart.v_champion_item_slots
+AS
+SELECT tp.patch,
+       tp.champion_id,
+       tp.role,
+       o.item_number,
+       o.item_id,
+       COUNT(*)                                             AS games,
+       SUM(CAST(tp.win AS INT))                             AS wins,
+       CAST(SUM(CAST(tp.win AS INT)) AS FLOAT) / COUNT(*)   AS win_rate,
+       CAST(COUNT(*) AS FLOAT)
+           / SUM(COUNT(*)) OVER (PARTITION BY tp.patch, tp.champion_id, tp.role, o.item_number) AS pick_share
+FROM mart.v_timeline_participant AS tp
+JOIN mart.v_completed_item_order AS o ON o.match_id = tp.match_id AND o.participant_id = tp.participant_id
+WHERE o.item_number <= 6
+GROUP BY tp.patch, tp.champion_id, tp.role, o.item_number, o.item_id;
 GO
 
 -- Keystone plus primary/secondary tree combinations.
@@ -171,6 +318,48 @@ LEFT JOIN dim.rune_tree AS t2 ON t2.tree_id = p.secondary_tree_id
 WHERE p.team_position IS NOT NULL
 GROUP BY m.patch, p.champion_id, p.team_position, p.keystone_id, k.rune_name,
          p.primary_tree_id, t1.tree_name, p.secondary_tree_id, t2.tree_name;
+GO
+
+-- Every individual rune, for the rune-page grid: how often each one is taken and its win rate.
+CREATE OR ALTER VIEW mart.v_champion_rune_picks
+AS
+SELECT m.patch,
+       p.champion_id,
+       p.team_position                                          AS role,
+       r.rune_id,
+       r.tree_id,
+       r.is_primary_tree,
+       COUNT(*)                                                 AS games,
+       SUM(CAST(p.win AS INT))                                  AS wins,
+       CAST(SUM(CAST(p.win AS INT)) AS FLOAT) / COUNT(*)        AS win_rate,
+       CAST(COUNT(*) AS FLOAT) / MAX(cr.games)                  AS pick_share
+FROM mart.v_valid_match AS m
+JOIN fact.match_participant AS p ON p.match_id = m.match_id
+JOIN fact.participant_rune AS r ON r.match_id = p.match_id AND r.participant_id = p.participant_id
+JOIN mart.v_champion_role_stats AS cr
+  ON cr.patch = m.patch AND cr.champion_id = p.champion_id AND cr.role = p.team_position
+GROUP BY m.patch, p.champion_id, p.team_position, r.rune_id, r.tree_id, r.is_primary_tree;
+GO
+
+-- Stat shards by row (1 = offense, 2 = flex, 3 = defense).
+CREATE OR ALTER VIEW mart.v_champion_shard_picks
+AS
+SELECT m.patch,
+       p.champion_id,
+       p.team_position                                          AS role,
+       s.shard_row,
+       s.shard_id,
+       COUNT(*)                                                 AS games,
+       SUM(CAST(p.win AS INT))                                  AS wins,
+       CAST(SUM(CAST(p.win AS INT)) AS FLOAT) / COUNT(*)        AS win_rate,
+       CAST(COUNT(*) AS FLOAT)
+           / SUM(COUNT(*)) OVER (PARTITION BY m.patch, p.champion_id, p.team_position, s.shard_row) AS pick_share
+FROM mart.v_valid_match AS m
+JOIN fact.match_participant AS p ON p.match_id = m.match_id
+CROSS APPLY (VALUES (1, p.shard_offense_id), (2, p.shard_flex_id), (3, p.shard_defense_id)) AS s (shard_row, shard_id)
+WHERE p.team_position IS NOT NULL
+  AND s.shard_id IS NOT NULL
+GROUP BY m.patch, p.champion_id, p.team_position, s.shard_row, s.shard_id;
 GO
 
 -- Summoner spell pairs. Flash on D and on F count as the same pair.
@@ -222,4 +411,39 @@ JOIN fact.match_participant AS b
 LEFT JOIN dim.champion AS c ON c.champion_id = b.champion_id
 WHERE a.team_position IS NOT NULL
 GROUP BY m.patch, a.champion_id, a.team_position, b.champion_id, c.champion_name;
+GO
+
+-- Tier list. Champions are ranked within each role by an adjusted win rate that adds 50 wins
+-- and 50 losses to their record, which pulls small samples towards 50%: 18-12 (60%) becomes
+-- 68-62 (52.3%), while 159-141 (53%) only moves to 52.3%. Tiers are cut by rank within the role.
+-- Only champion/role pairs picked in at least 0.5% of matches and making up at least 10% of
+-- the champion's games are ranked; the rest get no tier.
+CREATE OR ALTER VIEW mart.v_tier_list
+AS
+WITH scored AS (
+    SELECT r.*,
+           (r.wins + 50.0) / (r.games + 100.0) AS adjusted_win_rate,
+           CASE WHEN r.pick_rate >= 0.005 AND r.role_share >= 0.10 THEN 1 ELSE 0 END AS is_ranked
+    FROM mart.v_champion_role_stats AS r
+),
+ranked AS (
+    SELECT s.*,
+           CASE WHEN s.is_ranked = 1
+                THEN PERCENT_RANK() OVER (PARTITION BY s.patch, s.role, s.is_ranked
+                                          ORDER BY s.adjusted_win_rate DESC) END AS role_percentile
+    FROM scored AS s
+)
+SELECT patch, champion_id, champion_name, primary_class, role, games, wins, win_rate, pick_rate,
+       ban_rate, role_share, kda, cs_per_min, damage_per_min, vision_per_min, adjusted_win_rate,
+       role_percentile,
+       CASE
+           WHEN role_percentile IS NULL THEN NULL
+           WHEN role_percentile <= 0.05 THEN 'OP'   -- top 5%
+           WHEN role_percentile <= 0.20 THEN '1'    -- next 15%
+           WHEN role_percentile <= 0.45 THEN '2'    -- next 25%
+           WHEN role_percentile <= 0.75 THEN '3'    -- next 30%
+           WHEN role_percentile <= 0.92 THEN '4'    -- next 17%
+           ELSE '5'                                  -- bottom 8%
+       END AS tier
+FROM ranked;
 GO

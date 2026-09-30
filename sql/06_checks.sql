@@ -29,6 +29,26 @@ SELECT 'champions missing from dim.champion (Data Dragon out of date?)', 1,
        (SELECT COUNT(DISTINCT p.champion_id) FROM fact.match_participant AS p
         WHERE NOT EXISTS (SELECT 1 FROM dim.champion AS c WHERE c.champion_id = p.champion_id))
 UNION ALL
+SELECT 'raw timelines not yet transformed', 1,
+       (SELECT COUNT(*) FROM stg.timeline_raw AS r
+        WHERE r.status = 'done'
+          AND NOT EXISTS (SELECT 1 FROM fact.match_timeline AS t WHERE t.match_id = r.match_id))
+UNION ALL
+SELECT 'loaded timelines with no purchases', 1,
+       (SELECT COUNT(*) FROM fact.match_timeline AS t
+        WHERE NOT EXISTS (SELECT 1 FROM fact.item_event AS e
+                          WHERE e.match_id = t.match_id AND e.event_type = 'ITEM_PURCHASED'))
+UNION ALL
+SELECT 'valid matches without a timeline', 0,
+       (SELECT COUNT(*) FROM mart.v_valid_match AS m
+        WHERE NOT EXISTS (SELECT 1 FROM fact.match_timeline AS t WHERE t.match_id = m.match_id))
+UNION ALL
+SELECT 'stat shards missing from dim.stat_shard', 0,
+       (SELECT COUNT(DISTINCT s.shard_id) FROM fact.match_participant AS p
+        CROSS APPLY (VALUES (p.shard_offense_id), (p.shard_flex_id), (p.shard_defense_id)) AS s (shard_id)
+        WHERE s.shard_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM dim.stat_shard AS d WHERE d.shard_id = s.shard_id))
+UNION ALL
 SELECT 'items missing from dim.item', 0,
        (SELECT COUNT(DISTINCT i.item_id) FROM fact.participant_item AS i
         WHERE NOT EXISTS (SELECT 1 FROM dim.item AS d WHERE d.item_id = i.item_id))
@@ -39,5 +59,8 @@ SELECT 'valid-match players with no role assigned', 0,
         WHERE p.team_position IS NULL)
 UNION ALL
 SELECT 'queue rows that failed to download', 0,
-       (SELECT COUNT(*) FROM stg.match_queue WHERE status = 'failed');
+       (SELECT COUNT(*) FROM stg.match_queue WHERE status = 'failed')
+UNION ALL
+SELECT 'timelines that failed to download', 0,
+       (SELECT COUNT(*) FROM stg.timeline_raw WHERE status = 'failed');
 GO

@@ -1,6 +1,6 @@
 # 5. Item stats from final inventory, not build order
 
-**Status:** accepted, 2026-09-30
+**Status:** superseded by [0007](0007-timelines-for-build-order.md), 2026-09-30
 
 ## Context
 

@@ -122,3 +122,8 @@ class RiotClient:
         """match-v5: the full match as raw JSON text (stored unparsed in stg.match_raw)."""
         response = self._get(self._region_host, f"/lol/match/v5/matches/{match_id}")
         return response.text if response else None
+
+    def match_timeline_json(self, match_id: str) -> str | None:
+        """match-v5: the minute-by-minute timeline (item purchases, kills, ...) as raw JSON text."""
+        response = self._get(self._region_host, f"/lol/match/v5/matches/{match_id}/timeline")
+        return response.text if response else None

@@ -41,18 +41,38 @@ over clever ones.
 - **Build rate**: the share of a champion's games (in that role) that ended with the item in the
   final inventory.
 - **Final inventory**: the items held when the game ended (`item0`-`item6`). It says nothing about
-  the order they were bought in, which would need the timeline endpoint.
+  the order they were bought in; that comes from the timeline.
+- **Timeline**: a second API response per match, minute by minute, with every shop event. Only
+  purchases, sales and undos are kept (`fact.item_event`).
+- **Purchase**: an `ITEM_PURCHASED` event that wasn't undone straight after.
+- **Starter set**: everything bought in the first 90 seconds except the trinket, with quantities
+  (e.g. Doran's Blade + 1 Health Potion).
+- **First boots**: the first tier-2 boots bought.
+- **Item number** (1st item, 2nd item...): completed items numbered in the order they were first
+  bought. Boots are not counted.
+- **Core build**: a player's 1st, 2nd and 3rd completed items, in that order.
+- **Pick share**: within a champion and role, the share of games using that option (a rune, a
+  starter set, a core build). For item numbers, it's the share of players who reached that number.
 - **Keystone**: the first rune in the primary rune tree.
+- **Stat shards**: the three small bonuses under the rune trees (offense, flex, defense rows).
+- **Adjusted win rate**: (wins + 50) / (games + 100). Adding 50 wins and 50 losses pulls small
+  samples towards 50%, so a lucky 18-12 doesn't outrank a solid 159-141.
+- **Tier**: rank by adjusted win rate within a role, cut by percentile: OP (top 5%), 1 (next 15%),
+  2 (next 25%), 3 (next 30%), 4 (next 17%), 5 (bottom 8%). Only champion/role pairs with a pick
+  rate of at least 0.5% that make up at least 10% of the champion's games get a tier.
 
 ## Layers
 
 | Schema | Holds | Written by |
 |---|---|---|
-| `stg` | Raw API responses and the fetch queue | Python |
-| `dim` | Champion, item, rune and spell names from Data Dragon | `etl.usp_load_ddragon` |
+| `stg` | Raw API responses (matches, timelines) and the fetch queue | Python |
+| `dim` | Champion, item, rune and spell names and icons from Data Dragon; stat shards | `etl.usp_load_ddragon` |
 | `fact` | Matches, player records, items, runes and bans parsed from the raw JSON | `etl.usp_load_matches` |
-| `mart` | Reporting views, one per dashboard table | Views over `fact` and `dim` |
+| `fact` | Shop events parsed from the timelines | `etl.usp_load_timelines` |
+| `mart` | Reporting views, one per table on the website | Views over `fact` and `dim` |
 | `etl` | Procedures and data-quality checks | |
+
+The website (`site/`) reads the `mart` views as JSON; see [ADR 0006](docs/adr/0006-static-site-instead-of-streamlit.md).
 
 ## Known limits
 
@@ -60,6 +80,10 @@ over clever ones.
   division, and each division gets the same number of pages. Higher divisions are therefore
   over-represented compared with the real player base.
 - Sample tier is one label per match, not each player's own rank.
-- Item stats come from the final inventory, so they favour items bought in longer games.
-- Win rates on small samples are noisy; the dashboard hides rows below a minimum-games cutoff
+- Final-inventory item stats favour items bought in longer games; the build-order views don't.
+- Supports' starting World Atlas is granted by the game with no player attached
+  (`participantId` 0), so support starter sets only show what the player bought themselves.
+- If a player buys the same item twice and then undoes both purchases, the first purchase is
+  still counted. This only happens with consumables.
+- Win rates on small samples are noisy; the website hides rows below a minimum-games cutoff
   (50 games at 3,000 matches, raised at 30,000).
