@@ -161,7 +161,7 @@ def fetch_matches(client: RiotClient, conn, limit: int | None = None) -> int:
 
 def fetch_timelines(client: RiotClient, conn, limit: int | None = None) -> int:
     """Download the timeline of every fetched match that doesn't have one yet. The timeline holds
-    the item purchase order (docs/adr/0007). stg.timeline_raw doubles as the queue: no row, or
+    the item purchase order. stg.timeline_raw doubles as the queue: no row, or
     status 'pending', means still to fetch."""
     cursor = conn.cursor()
     cursor.execute(

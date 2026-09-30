@@ -1,6 +1,6 @@
 import gzip
 
-from riot_meta.db import SQL_DIR, split_batches
+from riot_meta.db import split_batches, sql_files
 
 
 def test_split_batches_on_go_lines_only():
@@ -9,8 +9,8 @@ def test_split_batches_on_go_lines_only():
 
 
 def test_every_sql_script_splits_into_batches():
-    scripts = sorted(SQL_DIR.glob("[0-9][0-9]_*.sql"))
-    assert scripts, "no sql scripts found"
+    scripts = sql_files()
+    assert scripts[0].name == "01_database.sql"
     for path in scripts:
         assert split_batches(path.read_text()), path.name
 

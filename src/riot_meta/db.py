@@ -1,4 +1,4 @@
-"""SQL Server connections and the script runner for sql/*.sql."""
+"""SQL Server connections and the runner for the scripts in sql/."""
 
 import re
 from pathlib import Path
@@ -42,12 +42,17 @@ def split_batches(script: str) -> list[str]:
     return [batch.strip() for batch in _GO_LINE.split(script) if batch.strip()]
 
 
+def sql_files(sql_dir: Path = SQL_DIR) -> list[Path]:
+    """Every script in sql/, in the order it runs: folder by folder, then file by file."""
+    return sorted(sql_dir.glob("[0-9]_*/[0-9][0-9]_*.sql"))
+
+
 def run_scripts(settings: Settings, sql_dir: Path = SQL_DIR) -> None:
-    """Run every sql/NN_*.sql file in order. 00_* runs against master (it creates the database)."""
-    for path in sorted(sql_dir.glob("[0-9][0-9]_*.sql")):
-        database = "master" if path.name.startswith("00_") else settings.mssql_database
+    """Run every script in sql/. The first one runs against master because it creates the database."""
+    for path in sql_files(sql_dir):
+        database = "master" if path.name == "01_database.sql" else settings.mssql_database
         with connect(settings, database=database) as conn:
             cursor = conn.cursor()
             for batch in split_batches(path.read_text()):
                 cursor.execute(batch)
-        print(f"  ran {path.name}")
+        print(f"  ran {path.parent.name}/{path.name}")

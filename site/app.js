@@ -96,7 +96,7 @@ async function init() {
 const forChampion = (rows, championId, role) =>
   rows.filter((r) => r.patch === db.patch && r.champion_id === championId && r.role === role);
 const byGames = (a, b) => b.games - a.games;
-const MATCHUP_MIN_GAMES = 5;   // champion page counter picks (docs/adr/0013)
+const MATCHUP_MIN_GAMES = 5;   // champion page counter picks
 const MATCHUP_PRIOR = 10;
 const enoughGames = (r) => r.games >= db.minGames;
 
@@ -401,7 +401,7 @@ async function renderChampion(key, role, ticket) {
     return o ? `${champImg(o, "round")}<span class="name">${esc(o.champion_name)}</span>` : "";
   };
   // Counter picks: lane opponents with 5+ games, ranked by win rate pulled towards the champion's
-  // own, as if each had 10 more games at that rate. A 5-0 then can't outrank a 30-10 (docs/adr/0013).
+  // own, as if each had 10 more games at that rate. A 5-0 then can't outrank a 30-10.
   const laneGames = db.matchups.filter((m) => m.champion_id === champ.champion_id && m.role === role);
   const laneTotal = laneGames.reduce((sum, m) => sum + m.games, 0);
   const ranked = laneGames.filter((m) => m.games >= MATCHUP_MIN_GAMES)
@@ -412,7 +412,7 @@ async function renderChampion(key, role, ticket) {
 
   // The core: the three items finished 1st to 3rd most often, in the order they usually come.
   // After the core: every other finished item, wherever it was built, out of all the champion's
-  // games with a timeline (docs/adr/0012).
+  // games with a timeline.
   const coreRows = mine(core);
   const coreThree = coreRows.filter(enoughGames).slice(0, 3).sort((a, b) => a.avg_slot - b.avg_slot);
   const timelineGames = coreRows.length ? Math.round(coreRows[0].games / coreRows[0].pick_share) : 0;
@@ -521,7 +521,7 @@ async function renderChampion(key, role, ticket) {
 
 // ---------- Insights ----------
 
-// [name, what the count chart counts] for each objective in the match JSON (docs/adr/0014).
+// [name, what the count chart counts] for each objective in the match JSON.
 const OBJECTIVES = {
   inhibitor: ["First inhibitor", "inhibitors"],
   baron: ["First Baron", "Barons"],
