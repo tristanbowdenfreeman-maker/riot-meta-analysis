@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rift Meta</title>
+  <meta name="description" content="Champion, item and rune stats for Emerald+ ranked solo/duo on EUW, built from the Riot Games API.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/">Rift Meta</a>
+    <span class="patch" id="patch-label"></span>
+  </header>
+
+  <main id="view" aria-live="polite"></main>
+
+  <footer class="footer">
+    <p>Emerald+ ranked solo/duo on EUW. Data from the Riot Games API, modelled in SQL Server.
+      <a href="https://github.com/tristanbowdenfreeman-maker/riot-meta-analysis">How it's built</a></p>
+    <p class="legal">Rift Meta isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or
+      anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated
+      properties are trademarks or registered trademarks of Riot Games, Inc.</p>
+  </footer>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
