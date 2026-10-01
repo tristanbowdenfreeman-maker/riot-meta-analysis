@@ -5,9 +5,11 @@
 const IMG = "https://ddragon.leagueoflegends.com/cdn";
 const ROLES = [
   ["ALL", "All"], ["TOP", "Top"], ["JUNGLE", "Jungle"],
-  ["MIDDLE", "Middle"], ["BOTTOM", "Bottom"], ["UTILITY", "Support"],
+  ["MIDDLE", "Mid"], ["BOTTOM", "Bot"], ["UTILITY", "Support"],
 ];
 const ROLE_NAME = Object.fromEntries(ROLES);
+// "the average mid laner", "played as a jungler"
+const ROLE_PLAYER = { TOP: "top laner", JUNGLE: "jungler", MIDDLE: "mid laner", BOTTOM: "bot laner", UTILITY: "support" };
 const TIER_ORDER = { OP: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 };
 // The options offered in each stat-shard row (offense, flex, defense).
 const SHARD_ROWS = [[5008, 5005, 5007], [5008, 5010, 5001], [5011, 5013, 5001]];
@@ -224,8 +226,8 @@ function renderTierList(role) {
     <div class="table-slot">${tierTable(role)}</div>
     <p class="method">± is the 95% margin of error. Tiers rank champions within each role by win rate after
       adding ${num(Math.round(db.tiers[0]?.prior_games ?? 0))} games at 50%, so a short lucky run can't top the list
-      (<a href="#/insights">why</a>). A champion needs a 1% pick rate in a role to be ranked. Weak against lists lane opponents with ${MATCHUP_MIN_GAMES}+ games
-      that the champion does worse against than usual.</p>
+      (<a href="#/insights">why</a>). A champion needs a 1% pick rate in a role to be ranked. Weak against shows the lane opponents
+      the champion does worst against compared with its usual win rate, from matchups with ${MATCHUP_MIN_GAMES}+ games.</p>
   </div>`;
   const el = view.firstElementChild;
   current = { page: "tiers", el, role };
@@ -365,7 +367,7 @@ function runeBoard(page, picks, shardPicks) {
     <div class="rune-tree">${title(page.primary_tree_id)}${primaryRows}</div>
     <div class="rune-tree">${title(page.secondary_tree_id)}${secondaryRows}</div>
     <div class="rune-tree shards"><h4>Shards</h4>${shardRows}</div>
-    <p class="legend">Under each rune: win rate, share of this page's players who take it, games.</p>
+    <p class="legend">Under each rune: its win rate, the share of players on this rune page who take it, and the number of games.</p>
   </div>`;
 }
 
@@ -378,7 +380,7 @@ function playstyleCard(stats, key, label, digits, role) {
   const fmt = (x) => (x == null ? "–" : x.toLocaleString("en-GB", { maximumFractionDigits: digits, minimumFractionDigits: digits }));
   const diff = value != null && average ? value / average - 1 : null;
   return `<div class="stat"><div class="label">${label}</div><div class="value">${fmt(value)}</div>
-    <div class="vs">${diff == null ? "" : `<span class="${diff >= 0 ? "good" : "muted"}">${signed(diff)}</span> `}vs ${ROLE_NAME[role]} average ${fmt(average)}</div></div>`;
+    <div class="vs">${diff == null ? "" : `<span class="${diff >= 0 ? "good" : "muted"}">${signed(diff)}</span> `}vs the average ${ROLE_PLAYER[role]} (${fmt(average)})</div></div>`;
 }
 
 async function renderChampion(key, role, ticket) {
@@ -432,8 +434,8 @@ async function renderChampion(key, role, ticket) {
     .map((r) => ({ ...r, avg_slot: r.slots / r.games, pick_share: r.games / timelineGames }));
 
   const sample = stats.tier == null
-    ? `Only ${plural(stats.games, "game")} as ${ROLE_NAME[role]}, too few to rank. Treat these numbers as rough.`
-    : `Based on ${plural(stats.games, "game")} as ${ROLE_NAME[role]}. Options with fewer than ${num(db.minGames)} games are hidden.`;
+    ? `Only ${plural(stats.games, "game")} played as a ${ROLE_PLAYER[role]}, too few to rank, so treat these numbers as rough.`
+    : `Based on ${plural(stats.games, "game")} played as a ${ROLE_PLAYER[role]}. Runes, spells and items need at least ${num(db.minGames)} games to be shown, so rare picks don't skew the picture.`;
 
   view.innerHTML = `<div class="page">
     <a class="back" href="#/role/${role}">← Tier list</a>
@@ -494,20 +496,23 @@ async function renderChampion(key, role, ticket) {
       <div class="panel tiles">${restRows.map((r) => `<div class="tile">${itemImg(r.item_id)}
           <span class="name">${itemName(r.item_id)}<small>${pct(r.pick_share)} of games · usually ${ordinal(Math.round(r.avg_slot))}</small></span>
         </div>`).join("") || '<div class="empty">No other item has been finished by 3+ players yet.</div>'}</div>
-      <p class="method">Core items: the three items players finish 1st, 2nd or 3rd most often, in the order they usually come, with how often each is one of
-        their first three. After the core: the other items they finish, at any point, out of ${plural(timelineGames, "game")}.
-        It has no win rate, because items finished later come from longer games.</p>
+      <p class="method">Players buy items through the game, and the expensive finished ones decide how a champion plays.
+        Core items are the three finished most often as a player's first, second or third item, shown in the order they're
+        usually bought. The percentage is how often each is among a player's first three. After the core lists the other
+        finished items, how often they're built across ${plural(timelineGames, "game")} and when they usually arrive. They
+        show no win rate, because only longer games reach them, which would skew it.</p>
     </section>
 
     <section>
       <h2>Matchups</h2>
       <div class="grid-2">
-        ${optionPanel("Does best vs", bestVs, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent beaten more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
-        ${optionPanel("Does worst vs", worstVsRows, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent lost to more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
+        ${optionPanel("Best against", bestVs, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent beaten more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
+        ${optionPanel("Worst against", worstVsRows, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent lost to more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
       </div>
-      <p class="method">The enemy in the same role, against ${esc(champ.champion_name)}'s ${pct(stats.win_rate)} win rate overall.
-        Opponents need ${MATCHUP_MIN_GAMES}+ games, and are ranked as if each had ${MATCHUP_PRIOR} more games at that overall
-        rate, so a lucky 5-0 doesn't top the list. ± is the 95% margin of error.</p>
+      <p class="method">How ${esc(champ.champion_name)} does against each opponent in the same role, compared with their usual
+        ${pct(stats.win_rate)} win rate as a ${ROLE_PLAYER[role]}. Faced is the share of games against that opponent.
+        Opponents need ${MATCHUP_MIN_GAMES}+ games, and are ranked as if each had ${MATCHUP_PRIOR} extra games at the usual
+        win rate, so a lucky 5–0 doesn't top the list. ± is the 95% margin of error.</p>
     </section>
   </div>`;
 
@@ -786,7 +791,7 @@ async function renderInsights(ticket) {
     const [worst, ...others] = lanes;
     return `A lead under 1k gold wins ${pct(small.win_rate, 0)}, barely better than a coin flip. 1–2k wins
       ${pct(mid.win_rate, 0)} and ${leadBand(big)} wins ${pct(big.win_rate, 0)}. A 1k+ lane lead is worth least for
-      ${ROLE_NAME[worst.role]} (${pct(worst.win_rate, 0)}); leads in the other roles win
+      ${ROLE_PLAYER[worst.role]}s (${pct(worst.win_rate, 0)}); leads in the other roles win
       ${Math.round(others[0].win_rate * 100)}–&#8288;${pct(others.at(-1).win_rate, 0)}.`;
   };
   const leadColumns = () => bandsAt().map((b) => rateColumn(b.band_min, b.win_rate, b.win_rate_moe, leadBand(b),
@@ -928,8 +933,9 @@ async function renderInsights(ticket) {
           <h2>${esc(objectiveName(topObjective.objective))} wins ${pct(topObjective.win_rate, 0)}</h2>
           <p class="lede">${secondObjective ? `${esc(objectiveName(secondObjective.objective))} wins ${pct(secondObjective.win_rate, 0)}` : ""}${thirdObjective ? `
             and ${esc(inSentence(objectiveName(thirdObjective.objective)))} ${pct(thirdObjective.win_rate, 0)}.` : "."}${firstBlood ? `
-            First blood, the earliest fight, wins only ${pct(firstBlood.win_rate, 0)}: an early kill is worth far less
-            than the towers and Barons it can lead to.` : ""}</p>
+            First blood, the game's first kill, wins only ${pct(firstBlood.win_rate, 0)}: an early kill is worth far less
+            than the towers and Barons it can lead to. Towers and inhibitors are the buildings guarding each team's base,
+            and Baron is the strongest neutral monster on the map.` : ""}</p>
         </div>
       </div>
       <div class="insight-grid">
@@ -966,7 +972,7 @@ async function renderInsights(ticket) {
       <div class="card-head">
         <div>
           <h2>Winners die ${range("Deaths")} less</h2>
-          <p class="lede">And get ${range("Kills + assists")} more kills and assists. These are results as much as
+          <p class="lede">They also get ${range("Kills + assists")} more kills and assists. These are results as much as
             causes: a team that's ahead gets more kills and safer fights.</p>
         </div>
         ${slicer(roles, gapRole, "Role")}
@@ -981,13 +987,13 @@ async function renderInsights(ticket) {
         <div>
           <h2>Bans don't predict wins</h2>
           <p class="lede">The ${num(topBand.champions)} champions banned in 10%+ of games won ${pct(topBand.win_rate)}
-            of the games they got through, the same as everyone else. Players ban what they find frustrating, not what wins.</p>
+            of the games where they weren't banned, about the same as everyone else. Players ban what they find frustrating, not what wins.</p>
         </div>
       </div>
       <div class="ban-grid">
         <div>
           <div class="columns" style="--even: ${height(0.5)}">${bandColumns()}</div>
-          <p class="method">Win rate by how often a champion is banned, with the 95% margin of error; the dashed line is 50%. Pick a column to list its champions.</p>
+          <p class="method">Win rate by how often a champion is banned, with the 95% margin of error; the dashed line is 50%. Pick a column to list its champions. Won covers every role a champion was played in, so it can differ from the win rate on its champion page, which is for one role.</p>
         </div>
         <div>
           <div class="ban-row head" aria-hidden="true"><span>Most banned</span><span></span><span>Banned</span><span>Won</span></div>
@@ -1009,8 +1015,8 @@ async function renderInsights(ticket) {
       <div class="dumbbell-axis" aria-hidden="true"><span></span><span class="axis-ticks">${axisTicks}</span><span></span></div>
       <div class="dumbbells">${dumbbells()}</div>
       <p class="method"><span class="dot-key raw"></span> Raw win rate <span class="dot-key adjusted"></span> after adding
-        ${num(prior)} games at 50%. The dashed line is 50%. Why ${num(prior)}: win rates spread more than chance alone
-        would spread them, and SQL Server measures the real spread between champions on every export (empirical Bayes).</p>
+        ${num(prior)} games at 50%. The dashed line is 50%. Why ${num(prior)}: on every export, SQL Server works out how
+        much of the gap between champions' win rates is real rather than chance, and sets the number from that (empirical Bayes).</p>
     </section>
 
     <div class="grid-2">
@@ -1024,7 +1030,7 @@ async function renderInsights(ticket) {
           <span><strong>${num(blue.wins)}</strong> blue wins</span>
           <span><strong>${num(red.wins)}</strong> red wins</span>
         </div>
-        <p class="method">${sideVerdict} The dashed line is an even split.</p>
+        <p class="method">Each game puts one team on the blue side of the map and one on the red. ${sideVerdict} The dashed line is an even split.</p>
       </section>
 
       <section class="card reveal">
@@ -1034,8 +1040,8 @@ async function renderInsights(ticket) {
           <span class="bar-track"><span class="bar rank-${r.sample_tier.toLowerCase()}" style="--w: ${(r.share_of_matches / rankScale).toFixed(4)}"></span></span>
           <span class="bar-value">${pct(r.share_of_matches, 0)}</span>
         </div>`).join("")}</div>
-        <p class="method">Games average ${db.avgMinutes.toFixed(1)} minutes. Each counts under the rank of the player
-          whose match history it came from.</p>
+        <p class="method">Games average ${db.avgMinutes.toFixed(1)} minutes. Each game counts under the rank of the
+          player whose match history it came from.</p>
       </section>
     </div>
 
