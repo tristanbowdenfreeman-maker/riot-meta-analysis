@@ -9,7 +9,7 @@ The definitions behind the numbers, and why I built it the way I did.
 | Server | EUW |
 | Queue | Ranked solo/duo only (queue 420) |
 | Ranks | Emerald and above ("Emerald+") |
-| Patch | One at a time; every view is split by patch |
+| Patch | One at a time, 30,000 matches each |
 
 Players are found on the ranked ladder, visited in a random (seeded) order, and at most five
 matches are taken from each, so no single player dominates the sample.
@@ -27,6 +27,32 @@ raw JSON means I can change the model and rebuild it without calling the API aga
 Every load is incremental: a procedure only picks up matches that aren't in its table yet, in
 batches that commit one at a time.
 
+## One patch at a time, 30,000 matches each
+
+`etl.patch` tracks which patch the site shows (`live`) and which is being filled (`collecting`).
+
+1. Each round, `python -m riot_meta patch` checks Data Dragon for a new patch. A new one is added
+   as `collecting` (`etl.usp_start_patch`), and only games played since then are queued.
+2. The collector queues games until the patch has 30,000 valid matches (`etl.v_patch_progress`),
+   then stops and checks for a new patch every hour.
+3. The site keeps showing the old patch: `mart.v_valid_match` only lets the live patch through, so
+   every view ignores the new one until it's ready.
+4. Once the new patch reaches 30,000, `etl.usp_promote_patch` makes it live and
+   `etl.usp_delete_retired_patches` deletes the old patch's raw JSON and fact rows, 1,000 matches
+   per transaction.
+
+So the database never holds more than two patches, about 6 GB each at most, and the site never
+shows a patch on a handful of games. If another patch comes out before the new one is full, the
+unfinished one is dropped and collection moves on.
+
+## Running on a laptop
+
+- SQL Server runs in Docker capped at 2 CPU cores and 3 GB of memory (`docker-compose.yml`), and
+  its cache at 2 GB (`sql/0_setup/03_server_settings.sql`).
+- Simple recovery mode, so the transaction log is reused instead of growing forever.
+- The collector runs at low CPU priority, and the Riot API rate limits (`RIOT_RATE_LIMITS`) set
+  how fast it downloads, whatever the key.
+
 ## The tables
 
 | Schema | What's in it | Loaded by |
@@ -37,7 +63,7 @@ batches that commit one at a time.
 | `fact` | Shop events from the timelines | `etl.usp_load_timelines` |
 | `fact` | Team objectives; gold at 10/15/20/25 minutes | `etl.usp_load_objectives`, `etl.usp_load_frames` |
 | `mart` | One view per table on the website | views |
-| `etl` | The procedures above and the data checks | |
+| `etl` | The procedures above, the data checks, and `etl.patch` | |
 
 The main fact table, `fact.match_participant`, has one row per player per match (10 per match).
 

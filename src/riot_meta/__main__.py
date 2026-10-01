@@ -38,12 +38,56 @@ def cmd_discover(settings, args):
     print(f"Discovered {total} players")
 
 
-def cmd_queue(settings, args):
-    since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+def cmd_patch(settings, args):
+    """Start collecting a new patch when Data Dragon has one, and put it live once it's full."""
+    version = ddragon.latest_version()
+    patch = pipeline.patch_of(version)
     with connect(settings) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM etl.patch WHERE patch = %s", (patch,))
+        is_new = cursor.fetchone() is None
+    if is_new:
+        ddragon.load(settings, version)  # names and icons of any new champions and items
+        with connect(settings) as conn:
+            cursor = conn.cursor()
+            cursor.execute("EXEC etl.usp_start_patch @patch = %s", (patch,))
+            print(f"New patch {patch}: collecting it; the site keeps the current patch until it's full")
+            print(f"  deleted {cursor.fetchone()[0]:,} matches of an unfinished patch")
+
+    with connect(settings) as conn:
+        cursor = conn.cursor()
+        cursor.execute("EXEC etl.usp_promote_patch @match_cap = %s", (settings.matches_per_patch,))
+        promoted, deleted = cursor.fetchone()
+        if promoted:
+            print(f"Patch {promoted} has {settings.matches_per_patch:,} matches: it is now live")
+        if deleted:
+            print(f"  deleted {deleted:,} matches of the old patch")
+        cursor.execute("SELECT patch, status, matches FROM etl.v_patch_progress ORDER BY started_utc")
+        for patch, status, matches in cursor.fetchall():
+            print(f"  patch {patch}: {status}, {matches:,} of {settings.matches_per_patch:,} matches")
+
+
+def cmd_queue(settings, args):
+    with connect(settings) as conn:
+        if args.since:
+            since = int(datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+            more = args.more
+        else:
+            # No date given: queue games of the patch being collected, up to its cap.
+            plan = pipeline.collection_plan(conn)
+            if plan is None:
+                raise SystemExit("No patch set up yet: run `python -m riot_meta patch` first, or pass --since")
+            patch, since, matches, in_progress = plan
+            if matches >= settings.matches_per_patch:
+                print(f"  patch {patch} is full ({matches:,} matches): nothing to queue")
+                return
+            needed = settings.matches_per_patch - matches - in_progress
+            if needed <= 0:
+                print(f"  patch {patch}: the {in_progress:,} matches already queued will fill it")
+                return
+            more = needed if args.more is None else min(args.more, needed)
         pipeline.queue_matches(
-            _client(settings), conn, args.target, int(since.timestamp()), args.per_player, args.seed, settings.platform,
-            args.more,
+            _client(settings), conn, args.target, since, args.per_player, args.seed, settings.platform, more
         )
 
 
@@ -120,6 +164,9 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("setup-db", help="create the database, tables, procedures and views").set_defaults(func=cmd_setup_db)
+    sub.add_parser(
+        "patch", help="start collecting a new patch, and put it live once it has MATCHES_PER_PATCH matches"
+    ).set_defaults(func=cmd_patch)
 
     p = sub.add_parser("ddragon", help="load champion/item/rune/spell names from Data Dragon")
     p.add_argument("--version", help="Data Dragon version (default: latest)")
@@ -130,7 +177,7 @@ def main() -> None:
     p.set_defaults(func=cmd_discover)
 
     p = sub.add_parser("queue", help="queue ranked match IDs from discovered players")
-    p.add_argument("--since", required=True, help="only matches from this date (UTC), e.g. the patch release date")
+    p.add_argument("--since", help="only matches from this date (UTC); default: the patch being collected, up to its cap")
     p.add_argument("--target", type=int, default=3000, help="stop once the queue holds this many matches")
     p.add_argument("--more", type=int, help="queue this many more matches than the queue holds now")
     p.add_argument("--per-player", type=int, default=5, help="max matches taken from each player")

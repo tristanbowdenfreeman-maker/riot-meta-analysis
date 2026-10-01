@@ -20,6 +20,7 @@ class Settings:
     mssql_user: str
     mssql_password: str
     mssql_database: str
+    matches_per_patch: int
 
 
 def parse_rate_limits(spec: str) -> list[tuple[int, float]]:
@@ -46,4 +47,5 @@ def load_settings() -> Settings:
         mssql_user=os.getenv("MSSQL_USER", "sa"),
         mssql_password=password,
         mssql_database=os.getenv("MSSQL_DATABASE", "RiotMeta"),
+        matches_per_patch=int(os.getenv("MATCHES_PER_PATCH", "30000")),
     )

@@ -19,3 +19,10 @@ def test_payload_compression_round_trips_unicode():
     # The fetcher stores UTF-16LE GZIP so T-SQL's CAST(DECOMPRESS(x) AS NVARCHAR(MAX)) can read it.
     text = '{"riotIdGameName": "Faker 페이커", "info": {}}'
     assert gzip.decompress(gzip.compress(text.encode("utf-16-le"))).decode("utf-16-le") == text
+
+
+def test_patch_of_drops_the_build_number():
+    from riot_meta.pipeline import patch_of
+
+    assert patch_of("16.19.1") == "16.19"
+    assert patch_of("16.19.712.3456") == "16.19"

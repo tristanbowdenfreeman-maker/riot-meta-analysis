@@ -5,6 +5,10 @@ services:
     platform: linux/amd64
     container_name: riot-mssql
     restart: unless-stopped   # start again whenever Docker Desktop starts
+    # Limits so a long collection run can't take over the laptop: 2 of its CPU cores and 3 GB of
+    # memory (SQL Server itself is capped at 2 GB in sql/0_setup/03_server_settings.sql).
+    cpus: 2
+    mem_limit: 3g
     environment:
       # Set MSSQL_ACCEPT_EULA=Y in .env once you have read and accepted the SQL Server licence.
       ACCEPT_EULA: "${MSSQL_ACCEPT_EULA:-N}"

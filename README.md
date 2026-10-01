@@ -62,9 +62,9 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && pip install -e .
 
 python -m riot_meta setup-db          # create the database, tables, procedures and views
-python -m riot_meta ddragon           # champion/item/rune/spell names
+python -m riot_meta patch             # names from Data Dragon, and the patch to collect
 python -m riot_meta discover          # find Emerald+ players
-python -m riot_meta queue --since 2026-09-24 --target 3000
+python -m riot_meta queue --more 1000 # games of that patch, up to 30,000 in all
 python -m riot_meta fetch             # download matches (safe to stop and re-run)
 python -m riot_meta fetch-timelines   # download timelines (safe to stop and re-run)
 python -m riot_meta transform         # run the load procedures
@@ -73,5 +73,8 @@ python -m riot_meta export            # mart views -> site/data/*.json
 python -m riot_meta status            # row counts at every stage
 ```
 
-`scripts/collect.sh` repeats queue → fetch → transform → check → export in rounds of 1,000
-matches, and publishes the site when the checks pass. `pytest` runs the tests.
+`scripts/collect.sh` repeats patch → queue → fetch → transform → check → export in rounds of
+1,000 matches and publishes the site when the checks pass. It stops at 30,000 matches per patch
+(`MATCHES_PER_PATCH` in `.env`), and when a new patch comes out it collects that in the background,
+switching the site over and deleting the old patch once the new one has 30,000.
+`pytest` runs the tests.

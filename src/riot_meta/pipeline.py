@@ -98,6 +98,40 @@ def queue_matches(
     return queued
 
 
+def patch_of(version: str) -> str:
+    """'16.19.1' (a Data Dragon or game version) -> '16.19', the patch as fact.match stores it."""
+    return ".".join(version.split(".")[:2])
+
+
+def collection_plan(conn) -> tuple[str, int, int, int] | None:
+    """The patch to collect (the newest in etl.patch), the time its games start (epoch seconds),
+    its matches loaded so far, and matches on their way (queued, or downloaded but not loaded).
+    None if no patch is set up."""
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT TOP 1 patch, DATEDIFF_BIG(SECOND, '1970-01-01', started_utc), matches
+        FROM etl.v_patch_progress
+        WHERE status <> 'retired'
+        ORDER BY started_utc DESC
+        """
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    patch, since_epoch, matches = row
+    # Matches already on their way: queued but not downloaded, or downloaded but not loaded yet.
+    cursor.execute(
+        """
+        SELECT (SELECT COUNT(*) FROM stg.match_queue WHERE status = 'pending')
+             + (SELECT COUNT(*) FROM stg.match_raw AS r
+                WHERE NOT EXISTS (SELECT 1 FROM fact.match AS m WHERE m.match_id = r.match_id))
+        """
+    )
+    in_progress = cursor.fetchone()[0]
+    return patch, int(since_epoch), matches, in_progress
+
+
 def _compress(text: str) -> bytes:
     """GZIP of UTF-16 text: T-SQL's CAST(DECOMPRESS(x) AS NVARCHAR(MAX)) turns it back into text."""
     return gzip.compress(text.encode("utf-16-le"))
