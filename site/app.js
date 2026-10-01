@@ -96,17 +96,22 @@ async function init() {
 const forChampion = (rows, championId, role) =>
   rows.filter((r) => r.patch === db.patch && r.champion_id === championId && r.role === role);
 const byGames = (a, b) => b.games - a.games;
-const MATCHUP_MIN_GAMES = 5;   // champion page counter picks
+const MATCHUP_MIN_GAMES = 5;   // counter picks, on the tier list and champion pages
 const MATCHUP_PRIOR = 10;
 const enoughGames = (r) => r.games >= db.minGames;
 
-// Lane opponents with enough games: weakest = the ones this champion loses to most.
-function counters(championId, role, weakest) {
-  return db.matchups
-    .filter((m) => m.champion_id === championId && m.role === role && enoughGames(m))
-    .filter((m) => (weakest ? m.win_rate < 0.5 : m.win_rate > 0.5))
-    .sort((a, b) => (weakest ? a.win_rate - b.win_rate : b.win_rate - a.win_rate) || b.games - a.games);
+// Counter picks: lane opponents with 5+ games, ranked by win rate pulled towards the champion's
+// own (winRate), as if each had 10 more games at that rate. A 5-0 then can't outrank a 30-10.
+// Best first; best vs = score above winRate, worst vs = below.
+function counterPicks(championId, role, winRate) {
+  const laneGames = db.matchups.filter((m) => m.champion_id === championId && m.role === role);
+  const laneTotal = laneGames.reduce((sum, m) => sum + m.games, 0);
+  return laneGames.filter((m) => m.games >= MATCHUP_MIN_GAMES)
+    .map((m) => ({ ...m, pick_share: m.games / laneTotal, score: (m.wins + MATCHUP_PRIOR * winRate) / (m.games + MATCHUP_PRIOR) }))
+    .sort((a, b) => b.score - a.score);
 }
+const worstVs = (championId, role, winRate) =>
+  counterPicks(championId, role, winRate).filter((m) => m.score < winRate).reverse();
 
 // ---------- Role tabs ----------
 
@@ -162,7 +167,7 @@ function tierTable(role, animate = true) {
   const body = tierRows(role).map((r, i) => {
     const c = db.champions.get(r.champion_id) ?? { champion_key: "", champion_name: r.champion_name };
     const href = `#/champion/${c.champion_key}/${r.role}`;
-    const weak = counters(r.champion_id, r.role, true).slice(0, 3)
+    const weak = worstVs(r.champion_id, r.role, r.win_rate).slice(0, 3)
       .map((m) => db.champions.get(m.opponent_id)).filter(Boolean)
       .map((o) => champImg(o, "sm round")).join("");
     return `<tr class="link${animate ? " rise" : ""}" style="--i:${Math.min(i, 20)}" data-href="${href}">
@@ -219,7 +224,8 @@ function renderTierList(role) {
     <div class="table-slot">${tierTable(role)}</div>
     <p class="method">± is the 95% margin of error. Tiers rank champions within each role by win rate after
       adding ${num(Math.round(db.tiers[0]?.prior_games ?? 0))} games at 50%, so a short lucky run can't top the list
-      (<a href="#/insights">why</a>). A champion needs a 1% pick rate in a role to be ranked. Matchups need ${num(db.minGames)}+ games.</p>
+      (<a href="#/insights">why</a>). A champion needs a 1% pick rate in a role to be ranked. Weak against lists lane opponents with ${MATCHUP_MIN_GAMES}+ games
+      that the champion does worse against than usual.</p>
   </div>`;
   const el = view.firstElementChild;
   current = { page: "tiers", el, role };
@@ -404,15 +410,9 @@ async function renderChampion(key, role, ticket) {
     const o = db.champions.get(r.opponent_id);
     return o ? `${champImg(o, "round")}<span class="name">${esc(o.champion_name)}</span>` : "";
   };
-  // Counter picks: lane opponents with 5+ games, ranked by win rate pulled towards the champion's
-  // own, as if each had 10 more games at that rate. A 5-0 then can't outrank a 30-10.
-  const laneGames = db.matchups.filter((m) => m.champion_id === champ.champion_id && m.role === role);
-  const laneTotal = laneGames.reduce((sum, m) => sum + m.games, 0);
-  const ranked = laneGames.filter((m) => m.games >= MATCHUP_MIN_GAMES)
-    .map((m) => ({ ...m, pick_share: m.games / laneTotal, score: (m.wins + MATCHUP_PRIOR * stats.win_rate) / (m.games + MATCHUP_PRIOR) }))
-    .sort((a, b) => b.score - a.score);
+  const ranked = counterPicks(champ.champion_id, role, stats.win_rate);
   const bestVs = ranked.filter((m) => m.score > stats.win_rate).slice(0, 5);
-  const worstVs = ranked.filter((m) => m.score < stats.win_rate).reverse().slice(0, 5);
+  const worstVsRows = worstVs(champ.champion_id, role, stats.win_rate).slice(0, 5);
 
   // The core: the three items finished 1st to 3rd most often, in the order they usually come.
   // After the core: every other finished item, wherever it was built, out of all the champion's
@@ -503,7 +503,7 @@ async function renderChampion(key, role, ticket) {
       <h2>Matchups</h2>
       <div class="grid-2">
         ${optionPanel("Does best vs", bestVs, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent beaten more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
-        ${optionPanel("Does worst vs", worstVs, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent lost to more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
+        ${optionPanel("Does worst vs", worstVsRows, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent lost to more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
       </div>
       <p class="method">The enemy in the same role, against ${esc(champ.champion_name)}'s ${pct(stats.win_rate)} win rate overall.
         Opponents need ${MATCHUP_MIN_GAMES}+ games, and are ranked as if each had ${MATCHUP_PRIOR} more games at that overall
