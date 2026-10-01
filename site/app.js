@@ -15,7 +15,7 @@ const SHARD_ROWS = [[5008, 5005, 5007], [5008, 5010, 5001], [5011, 5013, 5001]];
 const view = document.getElementById("view");
 const files = {};
 const load = (name) =>
-  (files[name] ??= fetch(`data/${name}.json`)
+  (files[name] ??= fetch(`data/${name}.json`, { cache: "no-cache" })
     .then((r) => {
       if (!r.ok) throw new Error(`data/${name}.json: ${r.status}`);
       return r.json();

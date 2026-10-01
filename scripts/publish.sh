@@ -14,6 +14,12 @@ PORTFOLIO=${PORTFOLIO:-$HOME/Projects/tiny-summit}
 
 rsync -a --delete --exclude .DS_Store site/ "$PORTFOLIO/league/"
 
+# Version the script and stylesheet links, so browsers fetch the new files after each change
+# instead of running a cached copy.
+version=$(cat site/app.js site/styles.css | shasum | cut -c1-8)
+sed -i '' -e "s|href=\"styles.css\"|href=\"styles.css?v=$version\"|" \
+          -e "s|src=\"app.js\"|src=\"app.js?v=$version\"|" "$PORTFOLIO/league/index.html"
+
 cd "$PORTFOLIO"
 git add league
 if git diff --cached --quiet -- league; then
