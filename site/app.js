@@ -201,6 +201,10 @@ function renderTierList(role) {
       <div>
         <h1>Champion<br>performance</h1>
         <p>Win, pick and ban rates for every champion in Emerald+ solo/duo on EUW, from ${plural(db.matches, "ranked match", "ranked matches")}.</p>
+        <a class="cta" href="#/insights">
+          <span class="cta__label">See the analysis <span aria-hidden="true">&rarr;</span></span>
+          <span class="cta__sub">What wins games: objectives, gold leads and bans, modelled in T-SQL</span>
+        </a>
       </div>
       ${kpiTriangle(db.volume)}
     </div>
@@ -1125,11 +1129,21 @@ function renderNotFound(message = "That page doesn't exist.") {
 
 // ---------- Router ----------
 
+// The Insights tab pulses until a visitor has opened it once.
+function insightsSeen() {
+  try { return localStorage.getItem("insights-seen") === "1"; } catch { return false; }
+}
+function rememberInsightsSeen() {
+  try { localStorage.setItem("insights-seen", "1"); } catch { /* private window: keep pulsing */ }
+}
+
 function route() {
   const ticket = ++navigation;
   const [, page, a, b] = (location.hash || "#/").split("/");
   const section = page === "insights" ? "insights" : "tiers";
   document.querySelectorAll("[data-nav]").forEach((link) => link.toggleAttribute("aria-current", link.dataset.nav === section));
+  if (section === "insights") rememberInsightsSeen();
+  document.querySelector('[data-nav="insights"]').classList.toggle("is-cued", section !== "insights" && !insightsSeen());
   if (!page) return renderTierList("ALL");
   if (page === "role" && ROLE_NAME[a] && a !== "ALL") return renderTierList(a);
   if (page === "insights") {

@@ -134,6 +134,53 @@ main { padding-top: calc(var(--nav-height) + 1rem); }
 .site-nav__links a:hover { background: rgba(251, 250, 245, 0.08); }
 .site-nav__links a[aria-current] { color: var(--ink); background: var(--paper-bright); }
 
+/* Insights tab: an orange dot and a ring that pulses until the page has been visited. */
+.site-nav__links a[data-nav="insights"] { position: relative; }
+.nav-cue { display: none; }
+.site-nav__links a.is-cued { color: var(--signal); box-shadow: inset 0 0 0 1px rgba(239, 90, 50, 0.55); animation: cue-ring 2.4s var(--ease) infinite; }
+.site-nav__links a.is-cued .nav-cue {
+  display: block;
+  position: absolute;
+  top: 0.15rem;
+  right: 0.15rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--signal);
+  animation: cue-dot 2.4s ease-in-out infinite;
+}
+@keyframes cue-ring {
+  0%   { box-shadow: inset 0 0 0 1px rgba(239, 90, 50, 0.55), 0 0 0 0 rgba(239, 90, 50, 0.45); }
+  70%  { box-shadow: inset 0 0 0 1px rgba(239, 90, 50, 0.55), 0 0 0 0.6rem rgba(239, 90, 50, 0); }
+  100% { box-shadow: inset 0 0 0 1px rgba(239, 90, 50, 0.55), 0 0 0 0 rgba(239, 90, 50, 0); }
+}
+@keyframes cue-dot { 50% { transform: scale(1.35); opacity: 0.7; } }
+
+/* Call to action under the tier list's intro. */
+.cta {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 1.5rem;
+  padding: 0.9rem 1.3rem;
+  border-radius: var(--radius);
+  background: var(--signal);
+  color: var(--ink);
+  box-shadow: var(--pill-shadow);
+  transition: transform 300ms var(--ease), box-shadow 300ms var(--ease);
+}
+/* Pulses with the Insights tab, so both stop once a visitor has seen the page. */
+.site-nav:has(.is-cued) ~ main .cta { animation: cue-ring 2.4s var(--ease) 1s infinite; }
+.cta:hover, .cta:focus-visible { transform: translateY(-2px); box-shadow: var(--shadow); animation: none; }
+.cta__label { font-family: var(--display); font-size: 1.35rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.cta__label span { display: inline-block; transition: transform 300ms var(--ease); }
+.cta:hover .cta__label span { transform: translateX(4px); }
+.cta__sub { font-size: 0.9rem; font-weight: 600; opacity: 0.8; }
+
+@media (prefers-reduced-motion: reduce) {
+  .site-nav__links a.is-cued, .site-nav__links a.is-cued .nav-cue, .site-nav:has(.is-cued) ~ main .cta { animation: none; }
+}
+
 .site-nav__progress {
   position: absolute;
   inset: auto 0 -1px;
