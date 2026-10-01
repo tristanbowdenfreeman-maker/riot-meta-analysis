@@ -4,6 +4,7 @@ services:
     # SQL Server has no ARM build; Docker Desktop runs it through Rosetta on Apple Silicon.
     platform: linux/amd64
     container_name: riot-mssql
+    restart: unless-stopped   # start again whenever Docker Desktop starts
     environment:
       # Set MSSQL_ACCEPT_EULA=Y in .env once you have read and accepted the SQL Server licence.
       ACCEPT_EULA: "${MSSQL_ACCEPT_EULA:-N}"
