@@ -3,6 +3,9 @@
 Champion, item, rune and summoner spell stats for League of Legends, built from the Riot Games
 API. Emerald+ ranked solo/duo on EUW, one patch at a time.
 
+I've been working on this project for about a year. This repository is its latest rebuild,
+started in September 2026: a Python and SQL Server pipeline feeding a static website.
+
 **Live:** https://tristanbowdenfreeman-maker.github.io/tiny-summit/league/ (part of my
 [portfolio](https://tristanbowdenfreeman-maker.github.io/tiny-summit/))
 
