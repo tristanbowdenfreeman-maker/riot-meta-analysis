@@ -25,7 +25,6 @@ BEGIN
 
         BEGIN TRANSACTION;
         -- Children first, because of the foreign keys.
-        DELETE t FROM fact.dragon_soul        AS t JOIN #batch AS b ON b.match_id = t.match_id;
         DELETE t FROM fact.participant_frame  AS t JOIN #batch AS b ON b.match_id = t.match_id;
         DELETE t FROM fact.team_objective     AS t JOIN #batch AS b ON b.match_id = t.match_id;
         DELETE t FROM fact.item_event         AS t JOIN #batch AS b ON b.match_id = t.match_id;

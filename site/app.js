@@ -506,8 +506,8 @@ async function renderChampion(key, role, ticket) {
       <p class="method">Players buy items through the game, and the expensive finished ones decide how a champion plays.
         Core items are the three finished most often as a player's first, second or third item, shown in the order they're
         usually bought. The percentage is how often each is among a player's first three. After the core lists the other
-        finished items, how often they're built across ${plural(timelineGames, "game")} and when they usually arrive. They
-        show no win rate, because only longer games reach them, which would skew it.</p>
+        finished items: how often each is built across ${plural(timelineGames, "game")}, and when it usually arrives. These
+        have no win rate, because only longer games get that far, which would skew it.</p>
     </section>
 
     <section>
@@ -724,10 +724,10 @@ window.addEventListener("scroll", hideTip, { passive: true });
 
 async function renderInsights(ticket) {
   view.innerHTML = `<div class="loading">Loading insights…</div>`;
-  const [gaps, bans, banBands, sides, sample, checks, objectives, objectiveCounts, goldLeads, laneLeads, souls] = await Promise.all(
+  const [gaps, bans, banBands, sides, sample, checks, objectives, objectiveCounts, goldLeads, laneLeads, lengths] = await Promise.all(
     ["role_win_gap", "ban_vs_win", "ban_band_win_rate", "side_win_rate", "sample_by_tier", "data_checks",
       "objective_win_rate", "objective_count_win_rate", "gold_lead_win_rate", "lane_lead_win_rate",
-      "dragon_soul_win_rate"].map(load),
+      "champion_game_length"].map(load),
   );
   if (ticket !== navigation) return;
   const now = (rows) => rows.filter((r) => r.patch === db.patch);
@@ -784,22 +784,32 @@ async function renderInsights(ticket) {
     ? "Rift Herald beats first dragon"
     : firstBlood ? `First blood wins only ${pct(firstBlood.win_rate, 0)}` : `${objectiveName(topObjective?.objective)} wins ${pct(topObjective?.win_rate, 0)}`;
   const early = [firstTower, herald, firstDragon, grubs].filter(Boolean)
-    .map((o) => `${esc(inSentence(objectiveName(o.objective)))} ${pct(o.win_rate, 0)}`);
+    .map((o) => `${pct(o.win_rate, 0)} with ${esc(inSentence(objectiveName(o.objective)))}`);
   const late = ["inhibitor", "baron"].map(firstOf).filter(Boolean);
 
-  // Dragon souls: the first team to four dragons gets a soul, whose type the map picks each game.
-  const soulRows = now(souls).sort((a, b) => b.win_rate - a.win_rate);
-  const soulShare = soulRows.reduce((sum, r) => sum + r.soul_share, 0);
-  const soulWinRate = soulRows.reduce((sum, r) => sum + r.wins, 0) / soulRows.reduce((sum, r) => sum + r.games, 0);
-  const [bestSoul] = soulRows, worstSoul = soulRows.at(-1);
-  // The souls only differ if the gap is bigger than the two margins of error together.
-  const soulsDiffer = bestSoul && bestSoul.win_rate - worstSoul.win_rate > bestSoul.win_rate_moe + worstSoul.win_rate_moe;
-  const soulBars = soulRows.map((r) => `<div class="bar-row" tabindex="0"
-      data-tip="${esc(`${r.soul} soul\nThe team that got it won ${num(r.wins)} of ${num(r.games)} games (${moe(r.win_rate_moe)})\nIn ${pct(r.soul_share)} of games, at ${Math.round(r.avg_minute)} minutes on average`)}">
-      <span class="bar-label">${esc(r.soul)}<small>${pct(r.soul_share, 0)} of games · ${Math.round(r.avg_minute)} min</small></span>
-      <span class="bar-track even"><span class="bar" style="--w: ${r.win_rate.toFixed(4)}"></span></span>
-      <span class="bar-value">${pct(r.win_rate)}</span>
-    </div>`).join("");
+  // Game length: which champions win short games and which win long ones. Each row is a
+  // dumbbell from the short-game win rate (grey) to the long-game win rate (orange).
+  const lengthRows = now(lengths).sort((a, b) => b.swing - a.swing);
+  const lateChamps = lengthRows.filter((r) => r.swing > 0).slice(0, 6);
+  const earlyChamps = lengthRows.filter((r) => r.swing < 0).reverse().slice(0, 6);
+  const [lateTop] = lateChamps, [earlyTop] = earlyChamps;
+  const DUMBBELL = [0.35, 0.65];   // the win-rate range the dumbbells are drawn on
+  const along = (rate) => Math.min(1, Math.max(0, (rate - DUMBBELL[0]) / (DUMBBELL[1] - DUMBBELL[0])));
+  const points = (r) => `${r.swing > 0 ? "+" : "−"}${Math.abs(r.swing * 100).toFixed(1)}`;
+  const lengthRow = (r) => {
+    const c = db.champions.get(r.champion_id) ?? { champion_key: "", champion_name: r.champion_name };
+    const [from, to] = [along(r.short_win_rate), along(r.long_win_rate)];
+    return `<a class="length-row" href="#/champion/${c.champion_key}"
+        data-tip="${esc(`${r.champion_name}\nUnder 25 min: won ${pct(r.short_win_rate)} of ${num(r.short_games)} games\n33+ min: won ${pct(r.long_win_rate)} of ${num(r.long_games)} games\nSwing ${points(r)} points (${moe(r.swing_moe)})`)}">
+      <span class="champ-cell">${champImg(c, "sm")}<span class="name">${esc(r.champion_name)}</span></span>
+      <span class="dumbbell">
+        <span class="dumbbell-line${r.swing < 0 ? " falling" : ""}" style="left: ${(Math.min(from, to) * 100).toFixed(2)}%; width: ${(Math.abs(to - from) * 100).toFixed(2)}%"></span>
+        <span class="dumbbell-dot short" style="left: ${(from * 100).toFixed(2)}%"></span>
+        <span class="dumbbell-dot long" style="left: ${(to * 100).toFixed(2)}%"></span>
+      </span>
+      <span class="bar-value">${points(r)}</span>
+    </a>`;
+  };
 
   // Gold leads: the leading team's win rate by lead size, and by a lane lead in each role,
   // at the minute picked in the slicer.
@@ -819,8 +829,8 @@ async function renderInsights(ticket) {
     const [small] = bands, big = bands.at(-1), mid = bandFrom(1000);
     if (!small || !mid || lanes.length < 2) return "";
     const [worst, ...others] = lanes;
-    return `A lead under 1k gold wins ${pct(small.win_rate, 0)}, barely better than a coin flip. 1–2k wins
-      ${pct(mid.win_rate, 0)} and ${leadBand(big)} wins ${pct(big.win_rate, 0)}. A 1k+ lane lead is worth least for
+    return `A lead under 1k gold wins ${pct(small.win_rate, 0)}, barely better than a coin flip. A 1–2k lead wins
+      ${pct(mid.win_rate, 0)}, and a lead of ${leadBand(big)} wins ${pct(big.win_rate, 0)}. A 1k+ lane lead is worth least for
       ${ROLE_PLAYER[worst.role]}s (${pct(worst.win_rate, 0)}); leads in the other roles win
       ${Math.round(others[0].win_rate * 100)}–&#8288;${pct(others.at(-1).win_rate, 0)}.`;
   };
@@ -833,8 +843,8 @@ async function renderInsights(ticket) {
       <span class="bar-value">${pct(r.win_rate)}</span>
     </div>`).join("");
   const leadMethod = () => `The leading team's win rate by team gold at ${minute}:00, with the 95% margin of error; the
-    dashed line is 50%. Only games still running count (${num(bandsAt().reduce((s, b) => s + b.games, 0))} at ${minute}
-    minutes, ties left out), so later minutes lean to longer games. A lane lead is a player 1,000+ gold ahead of the
+    dashed line is 50%. Only games still running at that minute count (${num(bandsAt().reduce((s, b) => s + b.games, 0))} at ${minute}
+    minutes, ties left out), so later minutes lean towards longer games. A lane lead is a player 1,000+ gold ahead of the
     opponent in their role. Leads show who is playing better as much as they cause wins.`;
 
   // Winners against losers: one bar per stat, for the role picked in the slicer.
@@ -847,6 +857,12 @@ async function renderInsights(ticket) {
     const values = roles.map(([role]) => Math.abs(gapOf(metric, role)?.gap ?? 0) * 100);
     return `${Math.round(Math.min(...values))}–${Math.round(Math.max(...values))}%`;
   };
+  // Farm per minute, without supports: they leave the farm to their bot laner, so winning
+  // supports can farm less.
+  const laners = roles.filter(([role]) => role !== "UTILITY");
+  const farmGaps = laners.map(([role]) => (gapOf("CS / min", role)?.gap ?? 0) * 100);
+  const farmRange = `${Math.round(Math.min(...farmGaps))}–${Math.round(Math.max(...farmGaps))}%`;
+  const supportFarm = gapOf("CS / min", "UTILITY")?.gap;
   let gapRole = roles[0][0];
   const gapBar = (m) => {
     const g = gapOf(m.metric, gapRole);
@@ -909,6 +925,10 @@ async function renderInsights(ticket) {
   const byRaw = [...ranked].sort((a, b) => b.win_rate - a.win_rate);
   const byAdjusted = [...ranked].sort((a, b) => b.adjusted_win_rate - a.adjusted_win_rate);
   const [luckiest] = byRaw, [leader] = byAdjusted;
+  const ordinal = (n) => `${n}${[, "st", "nd", "rd"][(n % 100 >> 3) ^ 1 && n % 10] || "th"}`;
+  // The raw top ten's biggest faller once the 50% games are added.
+  const faller = byRaw.slice(0, 10).map((t, i) => ({ t, from: i + 1, to: byAdjusted.indexOf(t) + 1 }))
+    .sort((a, b) => b.to - b.from - (a.to - a.from))[0];
   const shown = [...byRaw.slice(0, 10), ...byAdjusted.slice(0, 10)].flatMap((t) => [t.win_rate, t.adjusted_win_rate]);
   const [xLo, xHi] = [Math.floor(Math.min(0.5, ...shown) * 20) / 20, Math.ceil(Math.max(...shown) * 20) / 20];
   const at = (v) => `${(((v - xLo) / (xHi - xLo)) * 100).toFixed(2)}%`;
@@ -961,36 +981,48 @@ async function renderInsights(ticket) {
       <div class="card-head">
         <div>
           <h2>${esc(objectiveTitle)}</h2>
-          <p class="lede">${early.length ? `Of the early objectives, the team that takes them first wins: ${early.join(", ")}.` : ""}${firstBlood ? `
+          <p class="lede">${early.length ? `Among the early objectives, the team that gets there first wins ${early.slice(0, -1).join(", ")}${early.length > 1 ? " and " : ""}${early.at(-1)}.` : ""}${firstBlood ? `
             First blood, the game's first kill, wins only ${pct(firstBlood.win_rate, 0)}.` : ""}${late.length ? `
-            The ${late.map((o) => `${esc(inSentence(objectiveName(o.objective)))} (${pct(o.win_rate, 0)})`).join(" and ")} win most, but they
-            come late, when the game is mostly decided.` : ""} Towers and inhibitors are the buildings guarding each team's
-            base; dragons, void grubs, Rift Herald and Baron are neutral monsters that give the team that kills them a bonus.</p>
+            The ${late.map((o) => `${esc(inSentence(objectiveName(o.objective)))} (${pct(o.win_rate, 0)})`).join(" and ")} win more,
+            but they come late, once the game is mostly decided.` : ""} Towers and inhibitors are buildings that guard each
+            team's base. Dragons, void grubs, Rift Herald and Baron are neutral monsters that give a bonus to the team that kills them.</p>
         </div>
       </div>
       <div class="insight-grid">
         <div class="bars objective-list">${objectiveRows()}</div>
         <div class="objective-chart">${objectivePanel()}</div>
       </div>
-      <p class="method">The win rate of the team that took each objective first, out of games where anyone took it;
-        the dashed line is 50%. Late objectives mark a win as much as they cause one. Pick an objective to chart win rate by how many a team took; the last column includes more.</p>
+      <p class="method">The win rate of the team that took each objective first, in games where either team took it;
+        the dashed line is 50%. Late objectives mark a win as much as they cause one. Pick an objective to chart win rate
+        by how many a team took; the last column also counts anything above it.</p>
     </section>` : ""}
 
-    ${soulRows.length ? `<section class="card reveal" id="souls">
+    ${lateTop && earlyTop ? `<section class="card reveal" id="length">
       <div class="card-head">
         <div>
-          <h2>${soulsDiffer ? `${esc(bestSoul.soul)} soul wins most` : `Any dragon soul wins ${pct(soulWinRate, 0)}`}</h2>
-          <p class="lede">The first team to kill four dragons gets a dragon soul, a bonus for the rest of the game. It
-            happens in ${pct(soulShare, 0)} of games${soulsDiffer ? `, and the team that gets it wins ${pct(soulWinRate, 0)}` : ""}.
-            ${soulsDiffer
-              ? `${esc(bestSoul.soul)} wins ${pct(bestSoul.win_rate, 0)}, against ${pct(worstSoul.win_rate, 0)} for ${esc(worstSoul.soul)}.`
-              : `From ${esc(bestSoul.soul)} (${pct(bestSoul.win_rate, 0)}) to ${esc(worstSoul.soul)} (${pct(worstSoul.win_rate, 0)}), the gap is within the margin of error: getting a soul is what counts, not which one.`}</p>
+          <h2>${esc(lateTop.champion_name)} wins ${pct(lateTop.short_win_rate, 0)} of short games, ${pct(lateTop.long_win_rate, 0)} of long ones</h2>
+          <p class="lede">Short games end within 25 minutes; long ones last 33 or more. Champions like
+            ${esc(lateTop.champion_name)} get stronger as they gain levels and items, which players call scaling, so the
+            longer the game, the more they win. ${esc(earlyTop.champion_name)} is the opposite, winning
+            ${pct(earlyTop.short_win_rate, 0)} of short games but ${pct(earlyTop.long_win_rate, 0)} of long ones.</p>
         </div>
       </div>
-      <div class="bars">${soulBars}</div>
-      <p class="method">The win rate of the team that got each soul, out of games where a soul was taken; the dashed line
-        is 50%. The map picks the soul type each game, so neither team chooses it. Under each soul: the share of all games
-        it was taken in and the average minute. Hover a bar for the margin of error.</p>
+      <div class="insight-grid">
+        <div>
+          <h3 class="sub-head">Better in long games</h3>
+          <div class="length-list">${lateChamps.map(lengthRow).join("")}</div>
+        </div>
+        <div>
+          <h3 class="sub-head">Better in short games</h3>
+          <div class="length-list">${earlyChamps.map(lengthRow).join("")}</div>
+        </div>
+      </div>
+      <p class="method">Each line runs from a champion's win rate in short games <span class="dot-key short"></span>
+        (${pct(lateTop.short_match_share, 0)} of games) to long games <span class="dot-key long"></span>
+        (${pct(lateTop.long_match_share, 0)}), on a scale from ${pct(DUMBBELL[0], 0)} to ${pct(DUMBBELL[1], 0)} with 50% dashed.
+        The figure on the right is the change in percentage points. All roles count together, for champions with 300+ games of each length. With a few hundred
+        games each, a swing has a margin of error of about ±${Math.round([...lateChamps, ...earlyChamps].reduce((sum, r) => sum + r.swing_moe, 0) / (lateChamps.length + earlyChamps.length) * 100)} points, so trust the
+        order more than the exact numbers. Hover for the details, or click a champion for their page.</p>
     </section>` : ""}
 
     ${minute ? `<section class="card reveal" id="leads">
@@ -1017,9 +1049,11 @@ async function renderInsights(ticket) {
     <section class="card reveal" id="gaps">
       <div class="card-head">
         <div>
-          <h2>Winners die ${range("Deaths")} less</h2>
-          <p class="lede">They also get ${range("Kills + assists")} more kills and assists. These are results as much as
-            causes: a team that's ahead gets more kills and safer fights.</p>
+          <h2>Winners barely out-farm their opponents</h2>
+          <p class="lede">A winning player farms (kills minions and monsters for gold) only ${farmRange} more per minute than the loser in the same role${supportFarm < 0
+            ? `, and winning supports farm ${Math.round(-supportFarm * 100)}% less` : ""}. Their first item comes just
+            ${range("First item (min)")} sooner. The big gap is in fights: winners get ${range("Kills + assists")} more kills
+            and assists and die ${range("Deaths")} less, though that's partly because a team that's ahead fights on its own terms.</p>
         </div>
         ${slicer(roles, gapRole, "Role")}
       </div>
@@ -1052,9 +1086,15 @@ async function renderInsights(ticket) {
       <div class="card-head">
         <div>
           <h2>Small samples mislead</h2>
-          <p class="lede">${esc(luckiest.champion_name)} won ${pct(luckiest.win_rate)} of only ${num(luckiest.games)} games.
-            The tier list adds ${num(prior)} games at 50% to every record before ranking, so a short lucky run can't top it.
-            ${esc(leader.champion_name)}, at ${pct(leader.win_rate)} over ${num(leader.games)} games, holds up and leads.</p>
+          <p class="lede">${luckiest === leader
+            ? `${esc(leader.champion_name)} has the best win rate, ${pct(leader.win_rate)} over ${num(leader.games)} games,
+              and enough games for it to hold up. The tier list adds ${num(prior)} games at 50% to every record before
+              ranking, so a short lucky run can't reach the top: ${esc(faller.t.champion_name)} won ${pct(faller.t.win_rate)}
+              of only ${num(faller.t.games)} games and drops from ${ordinal(faller.from)} to ${ordinal(faller.to)}.`
+            : `${esc(luckiest.champion_name)} has the best raw win rate, ${pct(luckiest.win_rate)} from only
+              ${num(luckiest.games)} games. The tier list adds ${num(prior)} games at 50% to every record before ranking,
+              so a short lucky run can't top it. ${esc(leader.champion_name)}, at ${pct(leader.win_rate)} over
+              ${num(leader.games)} games, holds up and leads instead.`}</p>
         </div>
         ${slicer([["raw", "Raw"], ["adjusted", "Adjusted"]], rankBy, "Rank by")}
       </div>
