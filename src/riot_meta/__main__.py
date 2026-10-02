@@ -56,10 +56,10 @@ def cmd_patch(settings, args):
 
     with connect(settings) as conn:
         cursor = conn.cursor()
-        cursor.execute("EXEC etl.usp_promote_patch @match_cap = %s", (settings.matches_per_patch,))
+        cursor.execute("EXEC etl.usp_promote_patch @match_cap = %s", (settings.matches_to_go_live,))
         promoted, deleted = cursor.fetchone()
         if promoted:
-            print(f"Patch {promoted} has {settings.matches_per_patch:,} matches: it is now live")
+            print(f"Patch {promoted} has {settings.matches_to_go_live:,} matches: it is now live")
         if deleted:
             print(f"  deleted {deleted:,} matches of the old patch")
         cursor.execute("SELECT patch, status, matches FROM etl.v_patch_progress ORDER BY started_utc")

@@ -21,6 +21,7 @@ class Settings:
     mssql_password: str
     mssql_database: str
     matches_per_patch: int
+    matches_to_go_live: int
 
 
 def parse_rate_limits(spec: str) -> list[tuple[int, float]]:
@@ -48,4 +49,8 @@ def load_settings() -> Settings:
         mssql_password=password,
         mssql_database=os.getenv("MSSQL_DATABASE", "RiotMeta"),
         matches_per_patch=int(os.getenv("MATCHES_PER_PATCH", "30000")),
+        # A new patch replaces the live one on the site at this many matches, then keeps
+        # growing up to MATCHES_PER_PATCH. Never more than the cap.
+        matches_to_go_live=min(int(os.getenv("MATCHES_TO_GO_LIVE", "30000")),
+                               int(os.getenv("MATCHES_PER_PATCH", "30000"))),
     )

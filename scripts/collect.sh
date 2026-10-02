@@ -15,6 +15,10 @@
 # When the Riot key expires it waits and retries every 5 minutes: put a new key in .env and it
 # carries on. It runs at low priority (nice), so the laptop stays responsive.
 #
+# Before each round and each heavy stage it pauses while the Mac is short of disk space, on
+# battery below $MIN_BATTERY%, or reporting a thermal warning, and it rests $REST seconds
+# between rounds. The database itself is capped at 2 CPUs and 3 GB of memory (docker-compose.yml).
+#
 #   scripts/collect.sh                                            # in the foreground
 #   nohup caffeinate -i scripts/collect.sh >> collect.log 2>&1 &  # in the background
 #   STEP=500 scripts/collect.sh
@@ -24,6 +28,9 @@ cd "$(dirname "$0")/.."
 
 STEP=${STEP:-1000}
 PAGES=${PAGES:-2}            # ladder pages per division already discovered
+MIN_FREE_GB=${MIN_FREE_GB:-25}   # pause below this much free disk
+MIN_BATTERY=${MIN_BATTERY:-40}   # pause on battery below this charge (%)
+REST=${REST:-120}                # seconds between rounds
 LOG=$(mktemp)
 renice -n 10 $$ >/dev/null   # low CPU priority for this script and everything it starts
 
@@ -43,7 +50,34 @@ wait_after_failure() {
   fi
 }
 
+free_gb() { df -g / | awk 'NR == 2 { print $4 }'; }
+on_low_battery() {
+  pmset -g batt | grep -q "Battery Power" || return 1
+  [ "$(pmset -g batt | grep -o '[0-9]*%' | tr -d %)" -lt "$MIN_BATTERY" ]
+}
+# macOS prints "No thermal warning level has been recorded" unless the Mac is running hot.
+running_hot() { pmset -g therm | grep -i "warning level" | grep -viq "no .*warning level"; }
+
+# Wait until the Mac has disk space, power and is not running hot.
+wait_until_safe() {
+  while true; do
+    if [ "$(free_gb)" -lt "$MIN_FREE_GB" ]; then
+      stamp "Only $(free_gb) GB of disk free (minimum $MIN_FREE_GB GB). Paused; checking every 30 minutes."
+      sleep 1800
+    elif on_low_battery; then
+      stamp "On battery below $MIN_BATTERY%. Paused until the Mac is charging; checking every 10 minutes."
+      sleep 600
+    elif running_hot; then
+      stamp "macOS reports a thermal warning. Paused for 10 minutes to cool down."
+      sleep 600
+    else
+      return
+    fi
+  done
+}
+
 while true; do
+  wait_until_safe
   run patch || { wait_after_failure; continue; }
   stamp "Queueing up to $STEP more matches"
   run queue --more "$STEP" || { wait_after_failure; continue; }
@@ -61,6 +95,7 @@ while true; do
 
   run fetch || { wait_after_failure; continue; }
   run fetch-timelines || { wait_after_failure; continue; }
+  wait_until_safe
   run transform || { wait_after_failure; continue; }
   run patch || { wait_after_failure; continue; }   # goes live once the new patch is full
   if run check; then
@@ -72,4 +107,5 @@ while true; do
     stamp "A blocking data check failed, so site/data was not updated. Collection carries on."
   fi
   run status
+  sleep "$REST"
 done
