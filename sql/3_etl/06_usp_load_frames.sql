@@ -10,6 +10,7 @@ BEGIN
 
     DECLARE @batch_rows INT, @total_rows INT = 0;
 
+    CREATE TABLE #ids (match_id VARCHAR(30) NOT NULL PRIMARY KEY);
     CREATE TABLE #batch (
         match_id  VARCHAR(30)   NOT NULL PRIMARY KEY,
         payload   NVARCHAR(MAX) NOT NULL
@@ -19,20 +20,21 @@ BEGIN
     BEGIN
         TRUNCATE TABLE #batch;
 
-        -- Pick the match IDs first, then decompress only those timelines. Selecting from
-        -- stg.v_timeline_raw directly can decompress every stored timeline to find the next 100.
-        WITH next_batch AS (
-            SELECT TOP (@batch_size) t.match_id
-            FROM fact.match_timeline AS t
-            JOIN fact.match AS m ON m.match_id = t.match_id
-            WHERE m.duration_s >= 660
-              AND NOT EXISTS (SELECT 1 FROM fact.participant_frame AS f WHERE f.match_id = t.match_id)
-            ORDER BY t.match_id
-        )
+        -- Pick the match IDs into #ids first, then decompress only those timelines. In one
+        -- statement SQL Server can decompress every stored timeline to find the next 100.
+        TRUNCATE TABLE #ids;
+        INSERT INTO #ids (match_id)
+        SELECT TOP (@batch_size) t.match_id
+        FROM fact.match_timeline AS t
+        JOIN fact.match AS m ON m.match_id = t.match_id
+        WHERE m.duration_s >= 660
+          AND NOT EXISTS (SELECT 1 FROM fact.participant_frame AS f WHERE f.match_id = t.match_id)
+        ORDER BY t.match_id;
+
         INSERT INTO #batch (match_id, payload)
-        SELECT n.match_id, CAST(DECOMPRESS(r.payload_gz) AS NVARCHAR(MAX))
-        FROM next_batch AS n
-        JOIN stg.timeline_raw AS r ON r.match_id = n.match_id
+        SELECT i.match_id, CAST(DECOMPRESS(r.payload_gz) AS NVARCHAR(MAX))
+        FROM #ids AS i
+        JOIN stg.timeline_raw AS r ON r.match_id = i.match_id
         WHERE r.status = 'done';
 
         SET @batch_rows = @@ROWCOUNT;

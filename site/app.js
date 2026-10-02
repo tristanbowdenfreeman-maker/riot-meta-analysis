@@ -391,8 +391,8 @@ async function renderChampion(key, role, ticket) {
   if (!allRoles.length) return renderNotFound(`${champ.champion_name} hasn't been played in the sample yet.`);
   const stats = allRoles.find((r) => r.role === role) ?? allRoles.find((r) => r.tier != null) ?? allRoles[0];
   role = stats.role;
-  // Role tabs: the roles this champion is ranked in, plus the one on screen.
-  const roles = allRoles.filter((r) => r.tier != null || r.role === role);
+  // Role tabs: every role with enough games to show builds for, plus the one on screen.
+  const roles = allRoles.filter((r) => r.tier != null || r.games >= db.minGames || r.role === role);
 
   view.innerHTML = `<div class="loading">Loading ${esc(champ.champion_name)}…</div>`;
   const [starters, boots, core, late, pages, runePicks, shardPicks, spells] = await Promise.all(
@@ -433,9 +433,16 @@ async function renderChampion(key, role, ticket) {
   const restRows = [...rest.values()].filter((r) => r.games >= 3).sort(byGames).slice(0, 8)
     .map((r) => ({ ...r, avg_slot: r.slots / r.games, pick_share: r.games / timelineGames }));
 
-  const sample = stats.tier == null
-    ? `Only ${plural(stats.games, "game")} played as a ${ROLE_PLAYER[role]}, too few to rank, so treat these numbers as rough.`
-    : `Based on ${plural(stats.games, "game")} played as a ${ROLE_PLAYER[role]}. Runes, spells and items need at least ${num(db.minGames)} games to be shown, so rare picks don't skew the picture.`;
+  // Why a role has no tier: the tier list needs a 1% pick rate in the role, and the role must be
+  // 10% of the champion's games.
+  const championGames = allRoles.reduce((sum, r) => sum + r.games, 0);
+  const unranked = stats.pick_rate < 0.01
+    ? ` No tier here, because only ${pct(stats.pick_rate, 2)} of ${ROLE_PLAYER[role]}s pick ${esc(champ.champion_name)} (the tier list needs 1%).`
+    : ` No tier here, because only ${pct(stats.games / championGames, 0)} of ${esc(champ.champion_name)}'s games are in this role (the tier list needs 10%).`;
+  const sample = `Based on ${plural(stats.games, "game")} played as a ${ROLE_PLAYER[role]}.${stats.tier == null ? unranked : ""}
+    ${stats.games < db.minGames
+      ? "That's too few games to rely on, so treat these numbers as rough."
+      : `Runes, spells and items need at least ${num(db.minGames)} games to be shown, so rare picks don't skew the picture.`}`;
 
   view.innerHTML = `<div class="page">
     <a class="back" href="#/role/${role}">← Tier list</a>
@@ -717,9 +724,10 @@ window.addEventListener("scroll", hideTip, { passive: true });
 
 async function renderInsights(ticket) {
   view.innerHTML = `<div class="loading">Loading insights…</div>`;
-  const [gaps, bans, banBands, sides, sample, checks, objectives, objectiveCounts, goldLeads, laneLeads] = await Promise.all(
+  const [gaps, bans, banBands, sides, sample, checks, objectives, objectiveCounts, goldLeads, laneLeads, souls] = await Promise.all(
     ["role_win_gap", "ban_vs_win", "ban_band_win_rate", "side_win_rate", "sample_by_tier", "data_checks",
-      "objective_win_rate", "objective_count_win_rate", "gold_lead_win_rate", "lane_lead_win_rate"].map(load),
+      "objective_win_rate", "objective_count_win_rate", "gold_lead_win_rate", "lane_lead_win_rate",
+      "dragon_soul_win_rate"].map(load),
   );
   if (ticket !== navigation) return;
   const now = (rows) => rows.filter((r) => r.patch === db.patch);
@@ -768,8 +776,30 @@ async function renderInsights(ticket) {
     return `<h3 class="sub-head">${esc(chart.title)}</h3>
       <div class="columns${chart.n > 6 ? " dense" : ""}" style="--n: ${chart.n}; --even: 0.5">${chart.html}</div>`;
   };
-  const [topObjective, secondObjective, thirdObjective] = firsts;
+  const [topObjective] = firsts;
   const firstBlood = firstOf("champion");
+  // Inhibitors and Baron winning most is no surprise, so the headline compares the early objectives.
+  const [herald, firstDragon, firstTower, grubs] = ["riftHerald", "dragon", "tower", "horde"].map(firstOf);
+  const objectiveTitle = herald && firstDragon && herald.win_rate > firstDragon.win_rate
+    ? "Rift Herald beats first dragon"
+    : firstBlood ? `First blood wins only ${pct(firstBlood.win_rate, 0)}` : `${objectiveName(topObjective?.objective)} wins ${pct(topObjective?.win_rate, 0)}`;
+  const early = [firstTower, herald, firstDragon, grubs].filter(Boolean)
+    .map((o) => `${esc(inSentence(objectiveName(o.objective)))} ${pct(o.win_rate, 0)}`);
+  const late = ["inhibitor", "baron"].map(firstOf).filter(Boolean);
+
+  // Dragon souls: the first team to four dragons gets a soul, whose type the map picks each game.
+  const soulRows = now(souls).sort((a, b) => b.win_rate - a.win_rate);
+  const soulShare = soulRows.reduce((sum, r) => sum + r.soul_share, 0);
+  const soulWinRate = soulRows.reduce((sum, r) => sum + r.wins, 0) / soulRows.reduce((sum, r) => sum + r.games, 0);
+  const [bestSoul] = soulRows, worstSoul = soulRows.at(-1);
+  // The souls only differ if the gap is bigger than the two margins of error together.
+  const soulsDiffer = bestSoul && bestSoul.win_rate - worstSoul.win_rate > bestSoul.win_rate_moe + worstSoul.win_rate_moe;
+  const soulBars = soulRows.map((r) => `<div class="bar-row" tabindex="0"
+      data-tip="${esc(`${r.soul} soul\nThe team that got it won ${num(r.wins)} of ${num(r.games)} games (${moe(r.win_rate_moe)})\nIn ${pct(r.soul_share)} of games, at ${Math.round(r.avg_minute)} minutes on average`)}">
+      <span class="bar-label">${esc(r.soul)}<small>${pct(r.soul_share, 0)} of games · ${Math.round(r.avg_minute)} min</small></span>
+      <span class="bar-track even"><span class="bar" style="--w: ${r.win_rate.toFixed(4)}"></span></span>
+      <span class="bar-value">${pct(r.win_rate)}</span>
+    </div>`).join("");
 
   // Gold leads: the leading team's win rate by lead size, and by a lane lead in each role,
   // at the minute picked in the slicer.
@@ -930,12 +960,12 @@ async function renderInsights(ticket) {
     ${topObjective ? `<section class="card reveal" id="objectives">
       <div class="card-head">
         <div>
-          <h2>${esc(objectiveName(topObjective.objective))} wins ${pct(topObjective.win_rate, 0)}</h2>
-          <p class="lede">${secondObjective ? `${esc(objectiveName(secondObjective.objective))} wins ${pct(secondObjective.win_rate, 0)}` : ""}${thirdObjective ? `
-            and ${esc(inSentence(objectiveName(thirdObjective.objective)))} ${pct(thirdObjective.win_rate, 0)}.` : "."}${firstBlood ? `
-            First blood, the game's first kill, wins only ${pct(firstBlood.win_rate, 0)}: an early kill is worth far less
-            than the towers and Barons it can lead to. Towers and inhibitors are the buildings guarding each team's base,
-            and Baron is the strongest neutral monster on the map.` : ""}</p>
+          <h2>${esc(objectiveTitle)}</h2>
+          <p class="lede">${early.length ? `Of the early objectives, the team that takes them first wins: ${early.join(", ")}.` : ""}${firstBlood ? `
+            First blood, the game's first kill, wins only ${pct(firstBlood.win_rate, 0)}.` : ""}${late.length ? `
+            The ${late.map((o) => `${esc(inSentence(objectiveName(o.objective)))} (${pct(o.win_rate, 0)})`).join(" and ")} win most, but they
+            come late, when the game is mostly decided.` : ""} Towers and inhibitors are the buildings guarding each team's
+            base; dragons, void grubs, Rift Herald and Baron are neutral monsters that give the team that kills them a bonus.</p>
         </div>
       </div>
       <div class="insight-grid">
@@ -943,8 +973,24 @@ async function renderInsights(ticket) {
         <div class="objective-chart">${objectivePanel()}</div>
       </div>
       <p class="method">The win rate of the team that took each objective first, out of games where anyone took it;
-        the dashed line is 50%. Late objectives such as inhibitors fall near the end of a game, so they mark a win as much
-        as they cause one. Pick an objective to chart win rate by how many a team took; the last column includes more.</p>
+        the dashed line is 50%. Late objectives mark a win as much as they cause one. Pick an objective to chart win rate by how many a team took; the last column includes more.</p>
+    </section>` : ""}
+
+    ${soulRows.length ? `<section class="card reveal" id="souls">
+      <div class="card-head">
+        <div>
+          <h2>${soulsDiffer ? `${esc(bestSoul.soul)} soul wins most` : `Any dragon soul wins ${pct(soulWinRate, 0)}`}</h2>
+          <p class="lede">The first team to kill four dragons gets a dragon soul, a bonus for the rest of the game. It
+            happens in ${pct(soulShare, 0)} of games${soulsDiffer ? `, and the team that gets it wins ${pct(soulWinRate, 0)}` : ""}.
+            ${soulsDiffer
+              ? `${esc(bestSoul.soul)} wins ${pct(bestSoul.win_rate, 0)}, against ${pct(worstSoul.win_rate, 0)} for ${esc(worstSoul.soul)}.`
+              : `From ${esc(bestSoul.soul)} (${pct(bestSoul.win_rate, 0)}) to ${esc(worstSoul.soul)} (${pct(worstSoul.win_rate, 0)}), the gap is within the margin of error: getting a soul is what counts, not which one.`}</p>
+        </div>
+      </div>
+      <div class="bars">${soulBars}</div>
+      <p class="method">The win rate of the team that got each soul, out of games where a soul was taken; the dashed line
+        is 50%. The map picks the soul type each game, so neither team chooses it. Under each soul: the share of all games
+        it was taken in and the average minute. Hover a bar for the margin of error.</p>
     </section>` : ""}
 
     ${minute ? `<section class="card reveal" id="leads">

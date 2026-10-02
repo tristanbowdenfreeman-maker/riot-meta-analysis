@@ -7,6 +7,7 @@ BEGIN
     SET XACT_ABORT ON;
 
     BEGIN TRANSACTION;
+    DELETE FROM fact.dragon_soul;
     DELETE FROM fact.participant_frame;
     DELETE FROM fact.team_objective;
     DELETE FROM fact.item_event;
