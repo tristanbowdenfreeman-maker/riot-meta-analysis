@@ -594,11 +594,11 @@ function countUp(el) {
   requestAnimationFrame(step);
 }
 
-// The three headline figures: item events on top, matches and player records under it.
+// The three headline figures, biggest first: item events on top, player records and matches under it.
 const kpiTriangle = (v) => `<div class="kpi-triangle reveal">
     ${kpi("Item events", v.item_events, "", "num", "apex")}
-    ${kpi("Ranked matches", v.matches)}
     ${kpi("Player records", v.player_records)}
+    ${kpi("Ranked matches", v.matches)}
   </div>`;
 
 // Marks each .reveal block visible as it scrolls in: CSS grows its bars, and its figures count up.
