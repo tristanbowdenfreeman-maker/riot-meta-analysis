@@ -1049,7 +1049,7 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
 
 .rank-row {
   display: grid;
-  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr) 6rem;
+  grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr) 6rem;
   align-items: center;
   gap: 20px;
   padding: 14px 18px;
@@ -1140,3 +1140,6 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   .skill-cells { gap: 2px; }
   .skill-cell { border-radius: 3px; font-size: 0.6rem; }
 }
+.rank-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rank-emblem { flex: none; width: 48px; height: 48px; object-fit: contain; }
+@media (max-width: 640px) { .rank-emblem { width: 40px; height: 40px; } }

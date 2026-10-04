@@ -453,15 +453,15 @@ function playstyleCard(stats, key, label, digits, role) {
 
 // Win rate by rank: one row per band, the dot on a 35–65% scale with its 95% margin of error,
 // a dashed line at 50% and a tick at the champion's win rate across every rank.
-const RANK_BANDS = [["EMERALD", "Emerald"], ["DIAMOND", "Diamond"], ["MASTER+", "Master+"]];
+const RANK_BANDS = [["EMERALD", "Emerald", "emerald"], ["DIAMOND", "Diamond", "diamond"], ["MASTER+", "Master+", "master"]];
 const RANK_SCALE = [0.35, 0.65];
 const onRankScale = (rate) =>
   `${(Math.min(1, Math.max(0, (rate - RANK_SCALE[0]) / (RANK_SCALE[1] - RANK_SCALE[0]))) * 100).toFixed(2)}%`;
 
 function rankChart(rows, overall) {
-  const body = RANK_BANDS.map(([band, label], i) => {
+  const body = RANK_BANDS.map(([band, label, emblem], i) => {
     const r = rows.find((x) => x.rank_band === band);
-    const name = `<span class="name">${label}<small>${r ? `${plural(r.games, "game")} · ${pct(r.pick_rate)} pick rate` : "No games yet"}</small></span>`;
+    const name = `<span class="rank-name"><img class="rank-emblem" src="img/rank-${emblem}.png" alt="" width="48" height="48" loading="lazy"><span class="name">${label}<small>${r ? `${plural(r.games, "game")} · ${pct(r.pick_rate)} pick rate` : "No games yet"}</small></span></span>`;
     const track = (marks = "") => `<span class="rank-track" style="--even: ${onRankScale(0.5)}; --usual: ${onRankScale(overall)}">${marks}</span>`;
     if (!r || !enoughGames(r)) {
       return `<div class="rank-row rise" style="--i:${i}">${name}${track()}<div class="figure"><small>Under ${num(db.minGames)} games</small></div></div>`;
