@@ -921,10 +921,10 @@ async function renderInsights(ticket) {
     return `<a class="length-row" href="#/champion/${c.champion_key}"
         data-tip="${esc(`${r.champion_name}\nUnder 25 min: won ${pct(r.short_win_rate)} of ${num(r.short_games)} games\n33+ min: won ${pct(r.long_win_rate)} of ${num(r.long_games)} games\nSwing ${points(r)} points (${moe(r.swing_moe)})`)}">
       <span class="champ-cell">${champImg(c, "sm")}<span class="name">${esc(r.champion_name)}</span></span>
-      <span class="dumbbell">
-        <span class="dumbbell-line${r.swing < 0 ? " falling" : ""}" style="left: ${(Math.min(from, to) * 100).toFixed(2)}%; width: ${(Math.abs(to - from) * 100).toFixed(2)}%"></span>
-        <span class="dumbbell-dot short" style="left: ${(from * 100).toFixed(2)}%"></span>
-        <span class="dumbbell-dot long" style="left: ${(to * 100).toFixed(2)}%"></span>
+      <span class="swing">
+        <span class="swing-line${r.swing < 0 ? " falling" : ""}" style="left: ${(Math.min(from, to) * 100).toFixed(2)}%; width: ${(Math.abs(to - from) * 100).toFixed(2)}%"></span>
+        <span class="swing-dot short" style="left: ${(from * 100).toFixed(2)}%"></span>
+        <span class="swing-dot long" style="left: ${(to * 100).toFixed(2)}%"></span>
       </span>
       <span class="bar-value">${points(r)}</span>
     </a>`;
@@ -1136,8 +1136,8 @@ async function renderInsights(ticket) {
           <div class="length-list">${earlyChamps.map(lengthRow).join("")}</div>
         </div>
       </div>
-      <p class="method">Each line runs from a champion's win rate in short games <span class="dot-key short"></span>
-        (${pct(lateTop.short_match_share, 0)} of games) to long games <span class="dot-key long"></span>
+      <p class="method">Each line runs from a champion's win rate in short games <span class="swing-key short"></span>
+        (${pct(lateTop.short_match_share, 0)} of games) to long games <span class="swing-key long"></span>
         (${pct(lateTop.long_match_share, 0)}), on a scale from ${pct(DUMBBELL[0], 0)} to ${pct(DUMBBELL[1], 0)} with 50% dashed.
         The figure on the right is the change in percentage points. All roles count together, for champions with 300+ games of each length. With a few hundred
         games each, a swing has a margin of error of about ±${Math.round([...lateChamps, ...earlyChamps].reduce((sum, r) => sum + r.swing_moe, 0) / (lateChamps.length + earlyChamps.length) * 100)} points, so trust the

@@ -734,7 +734,7 @@ td .moe { margin-left: 6px; color: var(--faint); font-size: 0.8rem; }
 .ban-row.head { padding-top: 0; padding-bottom: 8px; color: var(--faint); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .ban-row.head span:nth-child(n + 3) { text-align: right; }
 
-/* ---------- Game length dumbbells ---------- */
+/* ---------- Game length swings ---------- */
 
 .length-list { display: grid; gap: 2px; }
 .length-row {
@@ -751,25 +751,25 @@ td .moe { margin-left: 6px; color: var(--faint); font-size: 0.8rem; }
 }
 .length-row:hover, .length-row:focus-visible { background: var(--surface-hover); outline: 0; }
 .length-row .champ-cell { min-width: 0; font-weight: 600; }
-.dumbbell { position: relative; height: 18px; }
+.swing { position: relative; height: 18px; }
 /* The track, and the 50% mark in the middle of the 35-65% scale. */
-.dumbbell::before { content: ""; position: absolute; inset: 8px 0; border-radius: 999px; background: rgba(251, 250, 245, 0.06); }
-.dumbbell::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px dashed rgba(251, 250, 245, 0.25); }
-.dumbbell-line {
+.swing::before { content: ""; position: absolute; inset: 8px 0; border-radius: 999px; background: rgba(251, 250, 245, 0.06); }
+.swing::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px dashed rgba(251, 250, 245, 0.25); }
+.swing-line {
   position: absolute; top: 7px; height: 4px; border-radius: 999px;
   background: linear-gradient(90deg, var(--stone), var(--accent));
   transform: scaleX(0); transform-origin: left; transition: transform 0.9s var(--ease);
 }
-.dumbbell-line.falling { background: linear-gradient(90deg, var(--accent), var(--stone)); transform-origin: right; }
-.dumbbell-dot {
+.swing-line.falling { background: linear-gradient(90deg, var(--accent), var(--stone)); transform-origin: right; }
+.swing-dot {
   position: absolute; top: 3px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%;
   z-index: 1; opacity: 0; transition: opacity 0.4s ease 0.5s;
 }
-.dumbbell-dot.short, .dot-key.short { background: var(--stone); }
-.dumbbell-dot.long, .dot-key.long { background: var(--accent); }
-.reveal.is-visible .dumbbell-line { transform: scaleX(1); }
-.reveal.is-visible .dumbbell-dot { opacity: 1; }
-.dot-key { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: 0; }
+.swing-dot.short, .swing-key.short { background: var(--stone); }
+.swing-dot.long, .swing-key.long { background: var(--accent); }
+.reveal.is-visible .swing-line { transform: scaleX(1); }
+.reveal.is-visible .swing-dot { opacity: 1; }
+.swing-key { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: 0; }
 
 /* ---------- Objectives and gold leads ---------- */
 
@@ -977,7 +977,7 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
 
 @media (max-width: 640px) {
   .length-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
-  .length-row .dumbbell { grid-column: 1 / -1; grid-row: 2; }
+  .length-row .swing { grid-column: 1 / -1; grid-row: 2; }
   :root { --nav-height: 4rem; }
   .site-nav { gap: 0.75rem; }
   .site-nav__back-label { display: none; }
