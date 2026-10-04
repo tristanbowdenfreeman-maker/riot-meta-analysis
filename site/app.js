@@ -984,8 +984,7 @@ async function renderInsights(ticket) {
           <p class="lede">${early.length ? `Among the early objectives, the team that gets there first wins ${early.slice(0, -1).join(", ")}${early.length > 1 ? " and " : ""}${early.at(-1)}.` : ""}${firstBlood ? `
             First blood, the game's first kill, wins only ${pct(firstBlood.win_rate, 0)}.` : ""}${late.length ? `
             The ${late.map((o) => `${esc(inSentence(objectiveName(o.objective)))} (${pct(o.win_rate, 0)})`).join(" and ")} win more,
-            but they come late, once the game is mostly decided.` : ""} Towers and inhibitors are buildings that guard each
-            team's base. Dragons, void grubs, Rift Herald and Baron are neutral monsters that give a bonus to the team that kills them.</p>
+            but they come late, once the game is mostly decided.` : ""}</p>
         </div>
       </div>
       <div class="insight-grid">
@@ -993,18 +992,19 @@ async function renderInsights(ticket) {
         <div class="objective-chart">${objectivePanel()}</div>
       </div>
       <p class="method">The win rate of the team that took each objective first, in games where either team took it;
-        the dashed line is 50%. Late objectives mark a win as much as they cause one. Pick an objective to chart win rate
+        the dashed line is 50%. Towers and inhibitors guard each base; the rest are neutral monsters that buff whoever
+        kills them. Late objectives mark a win as much as they cause one. Pick an objective to chart win rate
         by how many a team took; the last column also counts anything above it.</p>
     </section>` : ""}
 
     ${lateTop && earlyTop ? `<section class="card reveal" id="length">
       <div class="card-head">
         <div>
-          <h2>${esc(lateTop.champion_name)} wins ${pct(lateTop.short_win_rate, 0)} of short games, ${pct(lateTop.long_win_rate, 0)} of long ones</h2>
-          <p class="lede">Short games end within 25 minutes; long ones last 33 or more. Champions like
-            ${esc(lateTop.champion_name)} get stronger as they gain levels and items, which players call scaling, so the
-            longer the game, the more they win. ${esc(earlyTop.champion_name)} is the opposite, winning
-            ${pct(earlyTop.short_win_rate, 0)} of short games but ${pct(earlyTop.long_win_rate, 0)} of long ones.</p>
+          <h2>Scaling champions at a glance</h2>
+          <p class="lede">Some champions grow stronger with every level and item, which players call scaling.
+            ${esc(lateTop.champion_name)} wins ${pct(lateTop.short_win_rate, 0)} of games that end within 25 minutes, but
+            ${pct(lateTop.long_win_rate, 0)} of those that last 33 or more. ${esc(earlyTop.champion_name)} is the opposite:
+            ${pct(earlyTop.short_win_rate, 0)} in short games, ${pct(earlyTop.long_win_rate, 0)} in long ones.</p>
         </div>
       </div>
       <div class="insight-grid">
