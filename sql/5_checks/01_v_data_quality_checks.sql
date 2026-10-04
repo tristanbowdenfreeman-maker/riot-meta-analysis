@@ -53,6 +53,10 @@ SELECT 'timelines of 11+ minute games with no gold frames', 1,
         WHERE m.duration_s >= 660
           AND NOT EXISTS (SELECT 1 FROM fact.participant_frame AS f WHERE f.match_id = t.match_id))
 UNION ALL
+SELECT 'loaded timelines with no skill level-ups', 0,
+       (SELECT COUNT(*) FROM fact.match_timeline AS t
+        WHERE NOT EXISTS (SELECT 1 FROM fact.participant_skills AS s WHERE s.match_id = t.match_id))
+UNION ALL
 SELECT 'rune pages whose grid rows do not add up to the page games', 1,
        (SELECT COUNT(*) FROM (
             SELECT rp.patch, rp.champion_id, rp.role, rp.page_rank, r.tree_id, r.slot_index

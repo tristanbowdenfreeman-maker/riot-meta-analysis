@@ -37,6 +37,7 @@ MART_VIEWS = [
     "v_lane_lead_win_rate",
     "v_champion_game_length",
     "v_champion_rank_win_rate",
+    "v_champion_skill_paths",
 ]
 LOOKUPS = {
     "champions": "SELECT champion_id, champion_key, champion_name, primary_class FROM dim.champion",

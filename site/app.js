@@ -263,6 +263,74 @@ function renderTierList(role) {
   });
 }
 
+// ---------- Skill order ----------
+
+const SKILL_KEYS = ["Q", "W", "E", "R"];
+// Ability names, icons and max ranks from Data Dragon; letters and the usual ranks if it can't be reached.
+const abilities = (champ) => (files[`abilities/${champ.champion_key}`] ??=
+  fetch(`${IMG}/${db.version}/data/en_GB/champion/${champ.champion_key}.json`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => d?.data?.[champ.champion_key]?.spells ?? null)
+    .catch(() => null));
+
+// The skill taken at each level 1–18 (1–3 = Q, W, E; 4 = R). path.levels is the most common pick
+// at each level, taken separately, so it can ask for a sixth point, or put R a level late when
+// some players hold the point. A usual three-rank R goes at 6, 11 and 16; any other level that
+// breaks the rules, or that too few players reached, goes to the next skill in the max order.
+// Champions whose R ranks differently (Jayce, Udyr, ...) keep R where players put it.
+function skillLevels(path, spells) {
+  const maxRank = [0, ...SKILL_KEYS.map((_, i) => spells?.[i]?.maxrank ?? (i === 3 ? 3 : 5))];
+  const usualUlt = maxRank[4] === 3;
+  const order = [...new Set([...path.max_order].map(Number).concat([1, 2, 3]))];
+  const points = [0, 0, 0, 0, 0];
+  const fits = (slot) => points[slot] < maxRank[slot];
+  return Array.from({ length: 18 }, (_, i) => {
+    const level = i + 1;
+    let slot = Number(path.levels?.[i]);
+    const ultLevel = [6, 11, 16].includes(level);
+    if (usualUlt && ultLevel) slot = 4;
+    const allowed = slot >= 1 && slot <= 4 && fits(slot)
+      && (!usualUlt || (slot === 4 ? ultLevel : points[slot] < Math.ceil(level / 2)));
+    if (!allowed) {
+      slot = [6, 11, 16].includes(level) && fits(4) ? 4
+        : order.find((s) => fits(s) && points[s] < Math.ceil(level / 2)) ?? order.find(fits) ?? 4;
+    }
+    points[slot] += 1;
+    return slot;
+  });
+}
+
+function skillOrder(champ, rows, spells) {
+  const best = rows.filter(enoughGames).sort((a, b) => b.win_rate - a.win_rate)[0];
+  if (!best) return `<div class="panel"><div class="empty">No skill path has ${num(db.minGames)}+ games yet.</div></div>`;
+  const popular = rows[0];
+  const icon = (slot) => {
+    const spell = spells?.[slot - 1];
+    const key = SKILL_KEYS[slot - 1];
+    return `<span class="skill-icon">${spell ? `<img src="${IMG}/${db.version}/img/spell/${esc(spell.image.full)}" alt="" loading="lazy" width="40" height="40">` : ""}<b>${key}</b></span>`;
+  };
+  const priority = (path) => [...path.max_order].map(Number);
+  const levels = skillLevels(best, spells);
+  const rowsHtml = [1, 2, 3, 4].map((slot) => `<div class="skill-row">
+      <span class="skill-name">${icon(slot)}<span class="name">${esc(spells?.[slot - 1]?.name ?? SKILL_KEYS[slot - 1])}</span></span>
+      <span class="skill-cells">${levels.map((s, i) => `<span class="skill-cell${s === slot ? " on" : ""}">${s === slot ? i + 1 : ""}</span>`).join("")}</span>
+    </div>`).join("");
+  return `<div class="panel skill-card">
+      <div class="skill-priority">
+        <h3 class="sub-head">Skill priority</h3>
+        <div class="skill-keys">${priority(best).map(icon).join('<span class="arrow" aria-hidden="true">&rarr;</span>')}</div>
+        <div class="skill-figure"><strong>${wr(best.win_rate)}</strong> win rate <small>${moe(1.96 * Math.sqrt(0.25 / best.games))}</small></div>
+        <div class="vs">${plural(best.games, "game")} · ${pct(best.pick_share)} of players</div>
+        ${popular !== best ? `<div class="alt">Most played: ${priority(popular).map((s) => SKILL_KEYS[s - 1]).join(" → ")} first ${popular.start
+          .split("").map((s) => SKILL_KEYS[s - 1]).join("-")}, ${pct(popular.pick_share)} of players · ${pct(popular.win_rate)} win rate</div>` : ""}
+      </div>
+      <div class="skill-path">
+        <h3 class="sub-head">Skill path <span>levels 1–18</span></h3>
+        ${rowsHtml}
+      </div>
+    </div>`;
+}
+
 // ---------- Champion page ----------
 
 // Option panel columns: [heading, cell]. The default is pick rate then win rate.
@@ -425,10 +493,11 @@ async function renderChampion(key, role, ticket) {
   const roles = allRoles.filter((r) => r.tier != null || r.games >= db.minGames || r.role === role);
 
   view.innerHTML = `<div class="loading">Loading ${esc(champ.champion_name)}…</div>`;
-  const [starters, boots, core, late, pages, runePicks, shardPicks, spells, ranks] = await Promise.all(
-    ["champion_starter_sets", "champion_boots", "champion_core_items", "champion_late_items", "champion_rune_stats",
-     "champion_rune_picks", "champion_shard_picks", "champion_spell_stats", "champion_rank_win_rate"].map(load),
-  );
+  const [[starters, boots, core, late, pages, runePicks, shardPicks, spells, ranks, skillPaths], abilitySpells] = await Promise.all([
+    Promise.all(["champion_starter_sets", "champion_boots", "champion_core_items", "champion_late_items", "champion_rune_stats",
+      "champion_rune_picks", "champion_shard_picks", "champion_spell_stats", "champion_rank_win_rate", "champion_skill_paths"].map(load)),
+    abilities(champ),
+  ]);
   if (ticket !== navigation) return;  // the reader has already moved on
 
   const mine = (rows) => forChampion(rows, champ.champion_id, role).sort(byGames);
@@ -550,6 +619,15 @@ async function renderChampion(key, role, ticket) {
         ${pct(stats.win_rate)} win rate as a ${ROLE_PLAYER[role]}. Faced is the share of games against that opponent.
         Opponents need ${MATCHUP_MIN_GAMES}+ games, and are ranked as if each had ${MATCHUP_PRIOR} extra games at the usual
         win rate, so a lucky 5–0 doesn't top the list. ± is the 95% margin of error.</p>
+    </section>
+
+    <section>
+      <h2>Skill order</h2>
+      ${skillOrder(champ, mine(skillPaths), abilitySpells)}
+      <p class="method">The skill path with the highest win rate among those with ${num(db.minGames)}+ games as a
+        ${ROLE_PLAYER[role]}. A path is the first three skills plus the order Q, W and E are maxed; the grid shows the skill
+        players on it most often take at each level. Only players who reached level 11 count, so the shortest games are
+        left out. ± is the 95% margin of error.</p>
     </section>
 
     <section>

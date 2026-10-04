@@ -114,6 +114,8 @@ def cmd_transform(settings, args):
         print(f"Loaded objectives for {cursor.fetchone()[0]} matches into fact.team_objective")
         cursor.execute("EXEC etl.usp_load_frames")
         print(f"Loaded gold at 10/15/20/25 minutes for {cursor.fetchone()[0]} timelines into fact.participant_frame")
+        cursor.execute("EXEC etl.usp_load_skills")
+        print(f"Loaded skill orders for {cursor.fetchone()[0]} timelines into fact.participant_skills")
 
 
 def cmd_check(settings, args):
