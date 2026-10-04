@@ -1044,3 +1044,41 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition-duration: 0.01ms !important; }
 }
+
+/* ---------- Champion page: win rate by rank ---------- */
+
+.rank-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr) 6rem;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.rank-row .figure small { display: block; color: var(--faint); font-size: 0.8rem; }
+.rank-track { position: relative; height: 28px; }
+.rank-track::before { content: ""; position: absolute; inset: 50% 0 auto; border-top: 1px solid var(--border); }
+.rank-track::after { content: ""; position: absolute; top: 0; bottom: 0; left: var(--even); border-left: 1px dashed var(--faint); }
+.rank-track { background: linear-gradient(var(--stone), var(--stone)) var(--usual) 50% / 2px 14px no-repeat; }
+.rank-whisker { position: absolute; top: calc(50% - 2px); height: 4px; border-radius: 4px; background: rgba(239, 90, 50, 0.35); }
+.rank-dot {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(239, 90, 50, 0.25);
+}
+.rank-whisker.under { background: rgba(201, 196, 182, 0.3); }
+.rank-dot.under { background: var(--stone); box-shadow: 0 0 0 3px rgba(201, 196, 182, 0.2); }
+.rank-axis { padding-top: 8px; padding-bottom: 10px; border-bottom: 0; }
+.rank-ticks { position: relative; height: 1rem; color: var(--faint); font-size: 0.75rem; }
+.rank-ticks span { position: absolute; transform: translateX(-50%); }
+
+@media (max-width: 640px) {
+  .rank-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; padding: 12px 14px; }
+  .rank-track, .rank-ticks { grid-column: 1 / -1; grid-row: 2; }
+  .rank-axis > span:empty { display: none; }
+}

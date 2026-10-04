@@ -383,6 +383,36 @@ function playstyleCard(stats, key, label, digits, role) {
     <div class="vs">${diff == null ? "" : `<span class="${diff >= 0 ? "good" : "muted"}">${signed(diff)}</span> `}vs the average ${ROLE_PLAYER[role]} (${fmt(average)})</div></div>`;
 }
 
+// Win rate by rank: one row per band, the dot on a 35–65% scale with its 95% margin of error,
+// a dashed line at 50% and a tick at the champion's win rate across every rank.
+const RANK_BANDS = [["EMERALD", "Emerald"], ["DIAMOND", "Diamond"], ["MASTER+", "Master+"]];
+const RANK_SCALE = [0.35, 0.65];
+const onRankScale = (rate) =>
+  `${(Math.min(1, Math.max(0, (rate - RANK_SCALE[0]) / (RANK_SCALE[1] - RANK_SCALE[0]))) * 100).toFixed(2)}%`;
+
+function rankChart(rows, overall) {
+  const body = RANK_BANDS.map(([band, label], i) => {
+    const r = rows.find((x) => x.rank_band === band);
+    const name = `<span class="name">${label}<small>${r ? `${plural(r.games, "game")} · ${pct(r.pick_rate)} pick rate` : "No games yet"}</small></span>`;
+    const track = (marks = "") => `<span class="rank-track" style="--even: ${onRankScale(0.5)}; --usual: ${onRankScale(overall)}">${marks}</span>`;
+    if (!r || !enoughGames(r)) {
+      return `<div class="rank-row rise" style="--i:${i}">${name}${track()}<div class="figure"><small>Under ${num(db.minGames)} games</small></div></div>`;
+    }
+    const margin = 1.96 * Math.sqrt(0.25 / r.games);
+    return `<div class="rank-row rise" style="--i:${i}">${name}${track(`
+        <span class="rank-whisker${r.win_rate < 0.5 ? " under" : ""}" style="left: ${onRankScale(r.win_rate - margin)}; right: calc(100% - ${onRankScale(r.win_rate + margin)})"></span>
+        <span class="rank-dot${r.win_rate < 0.5 ? " under" : ""}" style="left: ${onRankScale(r.win_rate)}"></span>`)}
+      <div class="figure">${wr(r.win_rate)}<small>${moe(margin)}</small></div>
+    </div>`;
+  }).join("");
+  const axis = RANK_SCALE[0] + (RANK_SCALE[1] - RANK_SCALE[0]) / 2;
+  return `<div class="panel rank-chart">${body}
+    <div class="rank-row rank-axis"><span></span><span class="rank-ticks">
+      ${[RANK_SCALE[0], axis, RANK_SCALE[1]].map((t) => `<span style="left: ${onRankScale(t)}">${pct(t, 0)}</span>`).join("")}
+    </span><span></span></div>
+  </div>`;
+}
+
 async function renderChampion(key, role, ticket) {
   const champ = db.byKey.get(key.toLowerCase());
   if (!champ) return renderNotFound();
@@ -395,9 +425,9 @@ async function renderChampion(key, role, ticket) {
   const roles = allRoles.filter((r) => r.tier != null || r.games >= db.minGames || r.role === role);
 
   view.innerHTML = `<div class="loading">Loading ${esc(champ.champion_name)}…</div>`;
-  const [starters, boots, core, late, pages, runePicks, shardPicks, spells] = await Promise.all(
+  const [starters, boots, core, late, pages, runePicks, shardPicks, spells, ranks] = await Promise.all(
     ["champion_starter_sets", "champion_boots", "champion_core_items", "champion_late_items", "champion_rune_stats",
-     "champion_rune_picks", "champion_shard_picks", "champion_spell_stats"].map(load),
+     "champion_rune_picks", "champion_shard_picks", "champion_spell_stats", "champion_rank_win_rate"].map(load),
   );
   if (ticket !== navigation) return;  // the reader has already moved on
 
@@ -520,6 +550,17 @@ async function renderChampion(key, role, ticket) {
         ${pct(stats.win_rate)} win rate as a ${ROLE_PLAYER[role]}. Faced is the share of games against that opponent.
         Opponents need ${MATCHUP_MIN_GAMES}+ games, and are ranked as if each had ${MATCHUP_PRIOR} extra games at the usual
         win rate, so a lucky 5–0 doesn't top the list. ± is the 95% margin of error.</p>
+    </section>
+
+    <section>
+      <h2>Win rate by rank</h2>
+      ${rankChart(mine(ranks), stats.win_rate)}
+      <p class="method">${esc(champ.champion_name)}'s win rate as a ${ROLE_PLAYER[role]} at each rank, on a scale from
+        ${pct(RANK_SCALE[0], 0)} to ${pct(RANK_SCALE[1], 0)}. The dashed line is 50% and the light tick is their
+        ${pct(stats.win_rate)} across every rank. A game's rank is that of the player it was sampled from; matchmaking keeps
+        the other nine close to it. Master+ groups Master, Grandmaster and Challenger, which have few games on their own.
+        Pick rate is the share of that rank's games with ${esc(champ.champion_name)} in this role. Ranks need
+        ${num(db.minGames)}+ games, and ± is the 95% margin of error, so small gaps between ranks may be noise.</p>
     </section>
   </div>`;
 
