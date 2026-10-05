@@ -1098,10 +1098,6 @@ async function renderInsights(ticket) {
           (Emerald+ solo/duo, EUW) from the Riot Games API and SQL Server models them. Every figure below comes from a
           T-SQL view that has to pass its data checks before it's published. So far that's ${num(db.matches)} games
           from patch ${esc(patchName(db.patch))}.</p>
-        <ol class="stack" aria-label="How it's built">
-          <li>Riot API</li><li>Python</li><li>SQL Server</li><li>T-SQL views</li><li>${num(checks.length)} data checks</li><li>This site</li>
-        </ol>
-        <a class="stack-link" href="#/insights" data-scroll="pipeline">How it's built <span aria-hidden="true">&darr;</span></a>
       </div>
       ${kpiTriangle(vol)}
     </div>
@@ -1278,7 +1274,7 @@ async function renderInsights(ticket) {
       </section>
     </div>
 
-    <section class="card reveal flow-card" id="pipeline">
+    <section class="card reveal flow-card">
       <div class="card-head">
         <div>
           <h2>From API to dashboard</h2>
@@ -1325,12 +1321,6 @@ async function renderInsights(ticket) {
   window.scrollTo({ top: 0 });
   moveIndicator(el);
   reveal(el);
-
-  // "How it's built" scrolls to the pipeline card without changing the route.
-  el.querySelector(".stack-link").addEventListener("click", (e) => {
-    e.preventDefault();
-    el.querySelector("#pipeline").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
-  });
 
   const objectiveCard = el.querySelector("#objectives");
   objectiveCard?.querySelector(".objective-list").addEventListener("click", (e) => {
