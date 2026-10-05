@@ -1,6 +1,6 @@
 // League of Legends Statistics: reads the JSON exported from the SQL Server mart views (site/data) and renders
-// three pages: the tier list (#/ or #/role/TOP), a champion page (#/champion/Gangplank/TOP) and
-// the insights (#/insights).
+// three pages: the insights (#/ or #/insights), the tier list (#/tiers or #/role/TOP) and a champion
+// page (#/champion/Gangplank/TOP). Insights opens first: it's the analysis the project exists for.
 
 const IMG = "https://ddragon.leagueoflegends.com/cdn";
 const ROLES = [
@@ -216,7 +216,7 @@ function renderTierList(role) {
       ${kpiTriangle(db.volume)}
     </div>
     <div class="toolbar">
-      ${tabs(ROLES, role, (r) => (r === "ALL" ? "#/" : `#/role/${r}`))}
+      ${tabs(ROLES, role, (r) => (r === "ALL" ? "#/tiers" : `#/role/${r}`))}
       <label class="search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input type="search" placeholder="Search champions" aria-label="Search champions" value="${esc(tierQuery)}" autocomplete="off" spellcheck="false">
@@ -1091,8 +1091,13 @@ async function renderInsights(ticket) {
     <div class="hero hero--split">
       <div>
         <h1>Key<br>findings</h1>
-        <p>What ${num(db.matches)} Emerald+ solo/duo games on EUW show about patch ${esc(patchName(db.patch))},
-          and how every number on this site is made.</p>
+        <p>An end-to-end data analysis project: Python pulls ${num(db.matches)} ranked League of Legends games
+          (Emerald+ solo/duo, EUW) from the Riot Games API, SQL Server models them, and every figure below is a T-SQL
+          view that passes its data checks before it's published. This is what they show about patch ${esc(patchName(db.patch))}.</p>
+        <ol class="stack" aria-label="How it's built">
+          <li>Riot API</li><li>Python</li><li>SQL Server</li><li>T-SQL views</li><li>${num(checks.length)} data checks</li><li>This site</li>
+        </ol>
+        <a class="stack-link" href="#/insights" data-scroll="pipeline">How it's built <span aria-hidden="true">&darr;</span></a>
       </div>
       ${kpiTriangle(vol)}
     </div>
@@ -1260,7 +1265,7 @@ async function renderInsights(ticket) {
       </section>
     </div>
 
-    <section class="card reveal flow-card">
+    <section class="card reveal flow-card" id="pipeline">
       <div class="card-head">
         <div>
           <h2>From API to dashboard</h2>
@@ -1308,6 +1313,12 @@ async function renderInsights(ticket) {
   moveIndicator(el);
   reveal(el);
 
+  // "How it's built" scrolls to the pipeline card without changing the route.
+  el.querySelector(".stack-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    el.querySelector("#pipeline").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
+  });
+
   const objectiveCard = el.querySelector("#objectives");
   objectiveCard?.querySelector(".objective-list").addEventListener("click", (e) => {
     const row = e.target.closest("button[data-key]");
@@ -1345,29 +1356,19 @@ async function renderInsights(ticket) {
 
 function renderNotFound(message = "That page doesn't exist.") {
   current = null;
-  view.innerHTML = `<div class="page hero"><h1>Not found</h1><p>${esc(message)}</p><p><a class="good" href="#/">Back to the tier list</a></p></div>`;
+  view.innerHTML = `<div class="page hero"><h1>Not found</h1><p>${esc(message)}</p><p><a class="good" href="#/">Back to the insights</a></p></div>`;
 }
 
 // ---------- Router ----------
 
-// The Insights tab pulses until a visitor has opened it once.
-function insightsSeen() {
-  try { return localStorage.getItem("insights-seen") === "1"; } catch { return false; }
-}
-function rememberInsightsSeen() {
-  try { localStorage.setItem("insights-seen", "1"); } catch { /* private window: keep pulsing */ }
-}
-
 function route() {
   const ticket = ++navigation;
   const [, page, a, b] = (location.hash || "#/").split("/");
-  const section = page === "insights" ? "insights" : "tiers";
+  const section = !page || page === "insights" ? "insights" : "tiers";
   document.querySelectorAll("[data-nav]").forEach((link) => link.toggleAttribute("aria-current", link.dataset.nav === section));
-  if (section === "insights") rememberInsightsSeen();
-  document.querySelector('[data-nav="insights"]').classList.toggle("is-cued", section !== "insights" && !insightsSeen());
-  if (!page) return renderTierList("ALL");
+  if (page === "tiers") return renderTierList("ALL");
   if (page === "role" && ROLE_NAME[a] && a !== "ALL") return renderTierList(a);
-  if (page === "insights") {
+  if (section === "insights") {
     return renderInsights(ticket).catch((error) => {
       if (ticket === navigation) renderNotFound(`Couldn't load the insights (${error.message}).`);
     });
@@ -1381,7 +1382,7 @@ function route() {
 }
 
 window.addEventListener("hashchange", () => {
-  if (!(current?.page === "tiers" && /^#\/(role\/\w+)?$/.test(location.hash || "#/"))) current = null;
+  if (!(current?.page === "tiers" && /^#\/(tiers|role\/\w+)$/.test(location.hash))) current = null;
   route();
 });
 window.addEventListener("resize", () => current && moveIndicator(current.el));
