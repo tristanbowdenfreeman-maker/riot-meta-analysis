@@ -102,6 +102,19 @@ BEGIN
         CROSS APPLY (SELECT LEFT(i.gameVersion, CHARINDEX('.', i.gameVersion, CHARINDEX('.', i.gameVersion) + 1) - 1) AS patch) AS v
         LEFT JOIN stg.match_queue AS q ON q.match_id = b.match_id;
 
+        -- Riot leaves teamPosition blank for the odd player, usually one who left early. When they're the
+        -- only blank on a team whose other four hold four different roles, they get the fifth.
+        UPDATE p SET team_position = r.role
+        FROM #participant AS p
+        CROSS APPLY (VALUES ('TOP'), ('JUNGLE'), ('MIDDLE'), ('BOTTOM'), ('UTILITY')) AS r (role)
+        WHERE p.team_position IS NULL
+          AND NOT EXISTS (SELECT 1 FROM #participant AS t
+                          WHERE t.match_id = p.match_id AND t.team_id = p.team_id AND t.team_position = r.role)
+          AND (SELECT COUNT(DISTINCT t.team_position) FROM #participant AS t
+               WHERE t.match_id = p.match_id AND t.team_id = p.team_id) = 4
+          AND (SELECT COUNT(*) FROM #participant AS t
+               WHERE t.match_id = p.match_id AND t.team_id = p.team_id AND t.team_position IS NULL) = 1;
+
         INSERT INTO fact.match_participant (
             match_id, participant_id, puuid, team_id, champion_id, team_position, win, kills, deaths, assists,
             gold_earned, creep_score, vision_score, damage_to_champions, summoner1_id, summoner2_id,
