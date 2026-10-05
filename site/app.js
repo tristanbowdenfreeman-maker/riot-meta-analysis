@@ -1263,7 +1263,7 @@ async function renderInsights(ticket) {
       <section class="card reveal">
         <h2>Sample by rank</h2>
         <div class="bars ranks">${ranks.map((r) => `<div class="bar-row" tabindex="0" data-tip="${esc(`${RANK_NAME[r.sample_tier] ?? r.sample_tier}\n${num(r.matches)} matches`)}">
-          <span class="bar-label">${RANK_NAME[r.sample_tier] ?? esc(r.sample_tier)}</span>
+          <span class="bar-label"><img class="rank-icon" src="img/rank-${r.sample_tier.toLowerCase()}.png" alt="" width="28" height="28">${RANK_NAME[r.sample_tier] ?? esc(r.sample_tier)}</span>
           <span class="bar-track"><span class="bar rank-${r.sample_tier.toLowerCase()}" style="--w: ${(r.share_of_matches / rankScale).toFixed(4)}"></span></span>
           <span class="bar-value">${pct(r.share_of_matches, 0)}</span>
         </div>`).join("")}</div>

@@ -625,7 +625,9 @@ td .moe { margin-left: 6px; color: var(--faint); font-size: 0.8rem; }
 .swatch { display: inline-block; width: 22px; height: 10px; margin: 0 2px; border-radius: 999px; background: var(--accent); vertical-align: 1px; }
 .swatch.against { background: var(--stone); }
 
-.ranks .bar-row { grid-template-columns: 7rem minmax(0, 1fr) 3rem; }
+.ranks .bar-row { grid-template-columns: 9.5rem minmax(0, 1fr) 3rem; }
+.ranks .bar-label { display: flex; align-items: center; gap: 0.5rem; }
+.rank-icon { flex: none; width: 28px; height: 28px; object-fit: contain; }
 .bar.rank-emerald { background: #2bb57f; }
 .bar.rank-diamond { background: #6b93e3; }
 .bar.rank-master { background: #b36ae0; }
