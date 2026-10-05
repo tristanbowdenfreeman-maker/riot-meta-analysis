@@ -900,11 +900,19 @@ async function renderInsights(ticket) {
   // Inhibitors and Baron winning most is no surprise, so the headline compares the early objectives.
   const [herald, firstDragon, firstTower, grubs] = ["riftHerald", "dragon", "tower", "horde"].map(firstOf);
   const objectiveTitle = herald && firstDragon && herald.win_rate > firstDragon.win_rate
-    ? "Rift Herald beats first dragon"
+    ? `Rift Herald beats first dragon, ${pct(herald.win_rate, 0)} to ${pct(firstDragon.win_rate, 0)}`
     : firstBlood ? `First blood wins only ${pct(firstBlood.win_rate, 0)}` : `${objectiveName(topObjective?.objective)} wins ${pct(topObjective?.win_rate, 0)}`;
   const early = [firstTower, herald, firstDragon, grubs].filter(Boolean)
     .map((o) => `${pct(o.win_rate, 0)} with ${esc(inSentence(objectiveName(o.objective)))}`);
   const late = ["inhibitor", "baron"].map(firstOf).filter(Boolean);
+  // Herald against first dragon: the gap in points, and whether it is bigger than both margins of error together.
+  const heraldGap = herald && firstDragon ? (herald.win_rate - firstDragon.win_rate) * 100 : 0;
+  const heraldMargin = herald && firstDragon ? Math.hypot(herald.win_rate_moe, firstDragon.win_rate_moe) * 100 : 0;
+  const heraldLine = heraldGap > 0
+    ? `Rift Herald is worth ${heraldGap.toFixed(1)} points more than first dragon${heraldGap > heraldMargin
+      ? `, well beyond the ±${heraldMargin.toFixed(1)}-point margin of error` : `, inside the ±${heraldMargin.toFixed(1)}-point margin of error`},
+      though a team takes Herald in only ${pct(herald.taken_share, 0)} of games, against ${pct(firstDragon.taken_share, 0)} for dragon.`
+    : "";
 
   // Game length: which champions win short games and which win long ones. Each row is a
   // dumbbell from the short-game win rate (grey) to the long-game win rate (orange).
@@ -1100,7 +1108,8 @@ async function renderInsights(ticket) {
       <div class="card-head">
         <div>
           <h2>${esc(objectiveTitle)}</h2>
-          <p class="lede">${early.length ? `Among the early objectives, the team that gets there first wins ${early.slice(0, -1).join(", ")}${early.length > 1 ? " and " : ""}${early.at(-1)}.` : ""}${firstBlood ? `
+          <p class="lede">${early.length ? `Among the early objectives, the team that gets there first wins ${early.slice(0, -1).join(", ")}${early.length > 1 ? " and " : ""}${early.at(-1)}.` : ""}${heraldLine ? `
+            ${heraldLine}` : ""}${firstBlood ? `
             First blood, the game's first kill, wins only ${pct(firstBlood.win_rate, 0)}.` : ""}${late.length ? `
             The ${late.map((o) => `${esc(inSentence(objectiveName(o.objective)))} (${pct(o.win_rate, 0)})`).join(" and ")} win more,
             but they come late, once the game is mostly decided.` : ""}</p>
@@ -1168,7 +1177,7 @@ async function renderInsights(ticket) {
     <section class="card reveal" id="gaps">
       <div class="card-head">
         <div>
-          <h2>Winners barely out-farm their opponents</h2>
+          <h2>Fights, not farm, separate winners</h2>
           <p class="lede">A winning player farms (kills minions and monsters for gold) only ${farmRange} more per minute than the loser in the same role${supportFarm < 0
             ? `, and winning supports farm ${Math.round(-supportFarm * 100)}% less` : ""}. Their first item comes just
             ${range("First item (min)")} sooner. The big gap is in fights: winners get ${range("Kills + assists")} more kills
@@ -1186,7 +1195,8 @@ async function renderInsights(ticket) {
         <div>
           <h2>Bans don't predict wins</h2>
           <p class="lede">The ${num(topBand.champions)} champions banned in 10%+ of games won ${pct(topBand.win_rate)}
-            of the games where they weren't banned, about the same as everyone else. Players ban what they find frustrating, not what wins.</p>
+            of the games where they weren't banned, against ${pct(bands.at(-1).win_rate)} for the ${num(bands.at(-1).champions)}
+            banned in under 3%: ${(Math.abs(topBand.win_rate - bands.at(-1).win_rate) * 100).toFixed(1)} points apart. Players ban what they find frustrating, not what wins.</p>
         </div>
       </div>
       <div class="ban-grid">
