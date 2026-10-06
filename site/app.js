@@ -274,31 +274,75 @@ const championDetails = (champ) => (files[`abilities/${champ.champion_key}`] ??=
 const abilities = (champ) => championDetails(champ).then((d) => d?.spells ?? null);
 
 // The champion's passive and four abilities, each with Riot's short clip of it in game (the same
-// clips as the official champion pages), one playing at a time.
-const ABILITY_VIDEO = "https://d28xe8vt774jo5.cloudfront.net/champion-abilities";
-function abilityShowcase(champ, details) {
+// clips as the official champion pages), one playing at a time. Riot has moved these clips before,
+// so each one tries the current address, then the mp4, then the old address.
+const ABILITY_VIDEOS = [
+  (id, key) => `https://lol.dyn.riotcdn.net/x/videos/champion-abilities/${id}/ability_${id}_${key}1.webm`,
+  (id, key) => `https://lol.dyn.riotcdn.net/x/videos/champion-abilities/${id}/ability_${id}_${key}1.mp4`,
+  (id, key) => `https://d28xe8vt774jo5.cloudfront.net/champion-abilities/${id}/ability_${id}_${key}1.webm`,
+];
+// Data Dragon's numbers per rank, "8/7/6/5/4" or "8", tidied for reading. Ranges over 5000 are global.
+const perRank = (burn) => (burn && !/^0(\/0)*$/.test(burn) ? burn.split("/").join(" / ") : "");
+const abilityRange = (burn) => {
+  const top = Math.max(...String(burn ?? "").split("/").map(Number).filter(Number.isFinite));
+  return !top ? "" : top > 5000 ? "Global" : perRank(burn);
+};
+
+// `path` is the skill path the page shows (highest win rate, enough games); `levels` its 18 picks.
+function abilityShowcase(champ, details, path, levels) {
   if (!details?.spells) return "";
   const id = String(champ.champion_id).padStart(4, "0");
+  const resource = details.partype && !/none|^$/i.test(details.partype) ? details.partype : "";
+  const maxOrder = path ? [...path.max_order].map(Number) : [];
+  const usage = (slot) => {
+    if (!levels) return [];
+    const at = levels.flatMap((s, i) => (s === slot ? [i + 1] : []));
+    if (!at.length) return [];
+    if (slot === 4) return [["Ranked at", `Levels ${at.join(", ")}`]];
+    const order = maxOrder.indexOf(slot);
+    return [["First point", `Level ${at[0]}`], ...(order >= 0 ? [["Maxed", `${ordinal(order + 1)}, by level ${at.at(-1)}`]] : [])];
+  };
   const list = [
-    { key: "P", label: "Passive", name: details.passive.name, text: details.passive.description, img: `${IMG}/${db.version}/img/passive/${details.passive.image.full}` },
-    ...details.spells.map((s, i) => ({
-      key: SKILL_KEYS[i], label: SKILL_KEYS[i], name: s.name, text: s.description,
-      img: `${IMG}/${db.version}/img/spell/${s.image.full}`,
-      cooldown: s.cooldownBurn && s.cooldownBurn !== "0" ? s.cooldownBurn : "",
-    })),
-  ].map((a) => ({ ...a, video: `${ABILITY_VIDEO}/${id}/ability_${id}_${a.key}1.webm` }));
+    { key: "P", label: "Passive", name: details.passive.name, text: details.passive.description,
+      img: `${IMG}/${db.version}/img/passive/${details.passive.image.full}`, facts: [], usage: [] },
+    ...details.spells.map((s, i) => {
+      const cost = perRank(s.costBurn);
+      return {
+        key: SKILL_KEYS[i], label: `${SKILL_KEYS[i]} ability`, name: s.name, text: s.description,
+        img: `${IMG}/${db.version}/img/spell/${s.image.full}`,
+        facts: [
+          ["Cooldown", perRank(s.cooldownBurn) && `${perRank(s.cooldownBurn)}s`],
+          ["Cost", cost && resource ? `${cost} ${resource}` : ""],
+          ["Range", abilityRange(s.rangeBurn)],
+        ].filter(([, value]) => value),
+        usage: usage(i + 1),
+      };
+    }),
+  ].map((a) => ({ ...a, videos: ABILITY_VIDEOS.map((url) => url(id, a.key)) }));
   return { list, html: `<section class="cd-abilities">
       <h2>Abilities</h2>
       <div class="panel ability-panel">
         <div class="ability-side">
           <div class="ability-picks" role="tablist">${list.map((a, i) => `<button class="ability-pick" role="tab" aria-selected="${i === 0}" data-ability="${i}">
-            <img src="${a.img}" alt="" width="56" height="56" loading="lazy"><b>${a.label === "Passive" ? "P" : a.key}</b>
+            <img src="${a.img}" alt="" width="56" height="56" loading="lazy"><b>${a.key}</b>
             <span>${esc(a.name)}</span></button>`).join("")}</div>
           <div class="ability-info"></div>
         </div>
         <div class="ability-video"><video muted loop playsinline autoplay preload="none"></video><p class="ability-novideo" hidden>No clip for this ability.</p></div>
       </div>
     </section>` };
+}
+
+function abilityInfo(a, role) {
+  const facts = (rows) => rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join("");
+  return `<div class="ability-title">
+      <img src="${a.img}" alt="" width="52" height="52">
+      <div><span class="ability-kind">${a.label}</span><h3>${esc(a.name)}</h3></div>
+    </div>
+    ${a.facts.length ? `<dl class="ability-facts">${facts(a.facts)}</dl>` : ""}
+    <div class="ability-body">${paragraphs(plainText(a.text), "ability-text")}</div>
+    ${a.usage.length ? `<div class="ability-usage"><span class="label">In the top ${ROLE_PLAYER[role]} skill path</span>
+      <dl class="ability-facts">${facts(a.usage)}</dl></div>` : ""}`;
 }
 
 // Hover cards for items, summoner spells and runes, with details from Data Dragon fetched once on
@@ -581,9 +625,10 @@ async function renderChampion(key, role, ticket) {
   ]);
   if (ticket !== navigation) return;  // the reader has already moved on
   const abilitySpells = champDetails?.spells ?? null;
-  const showcase = abilityShowcase(champ, champDetails);
 
   const mine = (rows) => forChampion(rows, champ.champion_id, role).sort(byGames);
+  const shownPath = mine(skillPaths).filter(enoughGames).sort((a, b) => b.win_rate - a.win_rate)[0];
+  const showcase = abilityShowcase(champ, champDetails, shownPath, shownPath ? skillLevels(shownPath, abilitySpells) : null);
   const top = (rows, n) => rows.filter(enoughGames).slice(0, n);
   const runePages = mine(pages).filter((p) => p.page_rank <= 2 && enoughGames(p)).sort((a, b) => a.page_rank - b.page_rank);
   const board = (page) => runeBoard(page,
@@ -711,20 +756,23 @@ async function renderChampion(key, role, ticket) {
     const video = el.querySelector(".ability-video video");
     const missing = el.querySelector(".ability-novideo");
     const info = el.querySelector(".ability-info");
+    let tries = [];
     const pick = (i) => {
       const a = showcase.list[i];
       el.querySelectorAll(".ability-pick").forEach((b) => b.setAttribute("aria-selected", b.dataset.ability === String(i)));
-      info.innerHTML = `<h3><span>${a.label === "Passive" ? "Passive" : a.key}</span>${esc(a.name)}</h3>
-        ${a.cooldown ? `<p class="ability-cd">Cooldown ${esc(a.cooldown.replace(/\//g, " / "))}s</p>` : ""}
-        ${paragraphs(plainText(a.text), "ability-text")}`;
+      info.innerHTML = abilityInfo(a, role);
       missing.hidden = true;
       video.hidden = false;
-      video.src = a.video;
+      [video.src, ...tries] = a.videos;
       video.play().catch(() => {});
     };
     video.muted = true;  // the attribute alone doesn't always count as muted for autoplay
     video.addEventListener("loadeddata", () => video.play().catch(() => {}));
-    video.addEventListener("error", () => { video.hidden = true; missing.hidden = false; });
+    video.addEventListener("error", () => {
+      if (tries.length) { video.src = tries.shift(); return; }
+      video.hidden = true;
+      missing.hidden = false;
+    });
     el.querySelector(".ability-picks").addEventListener("click", (e) => {
       const button = e.target.closest(".ability-pick");
       if (button) pick(Number(button.dataset.ability));
