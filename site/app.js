@@ -100,6 +100,14 @@ const byGames = (a, b) => b.games - a.games;
 const MATCHUP_MIN_GAMES = 5;   // counter picks, on the tier list and champion pages
 const MATCHUP_PRIOR = 10;
 const enoughGames = (r) => r.games >= db.minGames;
+// For a champion's less played role, nothing may reach the cap. Rather than show an empty box, fall back
+// to the most played options with 30+ games, which the page labels as a small sample.
+const ROUGH_MIN = 30;
+const usable = (rows) => {
+  const ok = rows.filter(enoughGames);
+  return ok.length ? ok : rows.filter((r) => r.games >= ROUGH_MIN).sort(byGames);
+};
+const share = (r) => (enoughGames(r) ? `${pct(r.pick_share)} of games` : `<span class="rough">Only ${num(r.games)} games</span>`);
 
 // Counter picks: lane opponents with 5+ games, ranked by win rate pulled towards the champion's
 // own (winRate), as if each had 10 more games at that rate. A 5-0 then can't outrank a 30-10.
@@ -452,8 +460,8 @@ function skillLevels(path, spells) {
 }
 
 function skillOrder(champ, rows, spells) {
-  const best = rows.filter(enoughGames).sort((a, b) => b.win_rate - a.win_rate)[0];
-  if (!best) return `<div class="panel"><div class="empty">No skill path has ${num(db.minGames)}+ games yet.</div></div>`;
+  const best = rows.some(enoughGames) ? rows.filter(enoughGames).sort((a, b) => b.win_rate - a.win_rate)[0] : usable(rows)[0];
+  if (!best) return `<div class="panel"><div class="empty">No skill path has ${num(ROUGH_MIN)}+ games yet.</div></div>`;
   const popular = rows[0];
   const icon = (slot) => {
     const spell = spells?.[slot - 1];
@@ -471,7 +479,7 @@ function skillOrder(champ, rows, spells) {
         <h3 class="sub-head">Skill priority</h3>
         <div class="skill-keys">${priority(best).map(icon).join('<span class="arrow" aria-hidden="true">&rarr;</span>')}</div>
         <div class="skill-figure"><strong>${wr(best.win_rate)}</strong> win rate <small>${moe(1.96 * Math.sqrt(0.25 / best.games))}</small></div>
-        <div class="vs">${plural(best.games, "game")} · ${pct(best.pick_share)} of players</div>
+        <div class="vs">${enoughGames(best) ? `${plural(best.games, "game")} · ${pct(best.pick_share)} of players` : share(best)}</div>
         ${popular !== best ? `<div class="alt">Most played: ${priority(popular).map((s) => SKILL_KEYS[s - 1]).join(" → ")} first ${popular.start
           .split("").map((s) => SKILL_KEYS[s - 1]).join("-")}, ${pct(popular.pick_share)} of players · ${pct(popular.win_rate)} win rate</div>` : ""}
       </div>
@@ -574,15 +582,20 @@ function rankTrend(rows, overall) {
     const r = rows.find((row) => row.rank_band === band);
     return { i, label, emblem, r, ok: r && enoughGames(r) };
   });
-  const shown = points.filter((p) => p.ok);
-  const line = shown.map((p) => `${x(p.i)},${y(p.r.win_rate)}`).join(" ");
+  // Every rank with games gets a point. Ranks under the cap are drawn hollow with a dashed line, so the
+  // shape is there but reads as a small sample.
+  const shown = points.filter((p) => p.r);
+  const segments = shown.slice(1).map((p, k) => {
+    const q = shown[k];
+    return `<line class="trend${p.ok && q.ok ? "" : " rough"}" x1="${x(q.i)}" y1="${y(q.r.win_rate)}" x2="${x(p.i)}" y2="${y(p.r.win_rate)}"/>`;
+  }).join("");
   return `<svg class="rank-trend" viewBox="0 0 ${w} ${h}" role="img" aria-label="Win rate by rank">
     <line class="even" x1="0" x2="${w}" y1="${y(0.5)}" y2="${y(0.5)}"/><text class="axis" x="0" y="${y(0.5) - 4}">50%</text>
     <line class="usual" x1="0" x2="${w}" y1="${y(overall)}" y2="${y(overall)}"/>
-    ${shown.length > 1 ? `<polyline points="${line}"/>` : ""}
-    ${points.map((p) => p.ok ? `
-      <circle class="${p.r.win_rate < 0.5 ? "under" : ""}" cx="${x(p.i)}" cy="${y(p.r.win_rate)}" r="5"/>
-      <text class="value" x="${x(p.i)}" y="${y(p.r.win_rate) - 11}">${(p.r.win_rate * 100).toFixed(1)}%</text>`
+    ${segments}
+    ${points.map((p) => p.r ? `
+      <circle class="${p.ok ? (p.r.win_rate < 0.5 ? "under" : "") : "rough"}" cx="${x(p.i)}" cy="${y(p.r.win_rate)}" r="5"><title>${plural(p.r.games, "game")}${p.ok ? "" : `, under the ${num(db.minGames)}-game cap`}</title></circle>
+      <text class="value${p.ok ? "" : " faint"}" x="${x(p.i)}" y="${y(p.r.win_rate) - 11}">${(p.r.win_rate * 100).toFixed(1)}%</text>`
       : `<text class="value faint" x="${x(p.i)}" y="${y(0.5) - 8}">–</text>`).join("")}
     ${points.map((p) => `<image href="img/rank-${p.emblem}.png" x="${x(p.i) - 14}" y="${h - 66}" width="28" height="28"/>
       <text class="band" x="${x(p.i)}" y="${h - 20}">${p.label}</text>
@@ -612,8 +625,8 @@ async function renderChampion(key, role, ticket) {
   const showcase = abilityShowcase(champ, champDetails);
 
   const mine = (rows) => forChampion(rows, champ.champion_id, role).sort(byGames);
-  const top = (rows, n) => rows.filter(enoughGames).slice(0, n);
-  const runePages = mine(pages).filter((p) => p.page_rank <= 2 && enoughGames(p)).sort((a, b) => a.page_rank - b.page_rank);
+  const top = (rows, n) => usable(rows).slice(0, n);
+  const runePages = usable(mine(pages).filter((p) => p.page_rank <= 2)).sort((a, b) => a.page_rank - b.page_rank);
   const board = (page) => runeBoard(page,
     mine(runePicks).filter((p) => p.page_rank === page.page_rank),
     mine(shardPicks).filter((s) => s.page_rank === page.page_rank));
@@ -623,7 +636,7 @@ async function renderChampion(key, role, ticket) {
   // After the core: every other finished item, wherever it was built, out of all the champion's
   // games with a timeline.
   const coreRows = mine(core);
-  const coreThree = coreRows.filter(enoughGames).slice(0, 3).sort((a, b) => a.avg_slot - b.avg_slot);
+  const coreThree = [...coreRows.filter(enoughGames), ...coreRows.filter((r) => !enoughGames(r) && r.games >= ROUGH_MIN)].slice(0, 3).sort((a, b) => a.avg_slot - b.avg_slot);
   const timelineGames = coreRows.length ? Math.round(coreRows[0].games / coreRows[0].pick_share) : 0;
   const inCore = new Set(coreThree.map((r) => r.item_id));
   const rest = new Map();
@@ -643,7 +656,7 @@ async function renderChampion(key, role, ticket) {
     if (!row) return `<div class="build-row"><span class="label">${label}</span><span class="faint">Not enough games yet</span></div>`;
     const [icons, name] = pick(row);
     return `<div class="build-row"><span class="label">${label}</span><span class="icons">${icons}</span><strong>${name}</strong>
-      <span class="figure">${wr(row.win_rate)}<small>${pct(row.pick_share)} of games</small></span></div>`;
+      <span class="figure">${wr(row.win_rate)}<small>${share(row)}</small></span></div>`;
   };
   const playstyle = PLAYSTYLE.map(([key, label, digits]) => {
     const value = stats[key];
@@ -709,11 +722,11 @@ async function renderChampion(key, role, ticket) {
         ${runePages.length ? `<div class="rune-panel"><div class="rune-pages">${runePages.map((p, i) => `<${runePages.length > 1 ? `button aria-pressed="${i === 0}"` : "div"} class="rune-page" data-page="${i}">
           <div class="icons">${perkImg(db.runes.get(p.keystone_id)?.icon_path, p.keystone_name, "lg")}
             <div class="page-name"><strong>${esc(p.keystone_name)}</strong><small>${esc(p.primary_tree_name)} + ${esc(p.secondary_tree_name)}</small></div></div>
-          <div class="figure">${wr(p.win_rate)}<small>${pct(p.pick_share)} of games</small></div>
+          <div class="figure">${wr(p.win_rate)}<small>${share(p)}</small></div>
         </${runePages.length > 1 ? "button" : "div"}>`).join("")}</div>
         <div class="rune-slot">${board(runePages[0])}</div>
         </div>`
-        : `<div class="panel"><div class="empty">No rune page has ${num(db.minGames)}+ games yet.</div></div>`}
+        : `<div class="panel"><div class="empty">No rune page has ${num(ROUGH_MIN)}+ games yet.</div></div>`}
       </section>
     </div>
 

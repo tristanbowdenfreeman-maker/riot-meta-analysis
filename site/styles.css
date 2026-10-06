@@ -450,6 +450,7 @@ tbody tr.link:hover { background: var(--surface-hover); }
 .figure { text-align: right; font-variant-numeric: tabular-nums; }
 .figure strong { display: block; font-weight: 700; }
 .figure small { display: block; color: var(--faint); font-size: 0.8rem; }
+.rough { color: var(--bad); }
 
 .empty { padding: 18px; color: var(--muted); }
 
@@ -1115,9 +1116,11 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
 .rank-trend { display: block; width: 100%; height: auto; overflow: visible; }
 .rank-trend line.even { stroke: var(--faint); stroke-dasharray: 3 4; }
 .rank-trend line.usual { stroke: var(--border); }
-.rank-trend polyline { fill: none; stroke: var(--accent); stroke-width: 2; }
+.rank-trend line.trend { stroke: var(--accent); stroke-width: 2; }
+.rank-trend line.trend.rough { stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 4 4; }
 .rank-trend circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
 .rank-trend circle.under { fill: var(--stone); }
+.rank-trend circle.rough { fill: var(--surface); stroke: var(--faint); stroke-width: 1.5; }
 .rank-trend text { fill: var(--muted); font: 600 11px var(--body); text-anchor: middle; }
 .rank-trend text.value { fill: var(--text); font-size: 12px; }
 .rank-trend text.faint { fill: var(--faint); }
