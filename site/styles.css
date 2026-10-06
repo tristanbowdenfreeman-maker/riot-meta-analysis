@@ -52,6 +52,48 @@ a { color: inherit; text-decoration: none; }
 a:focus-visible, button:focus-visible { outline: 3px solid var(--signal); outline-offset: 4px; border-radius: 6px; }
 img { display: block; }
 
+/* ---------- Backdrop art ----------
+   Riot's renders of the big objective monsters sit in the side margins on wide screens, faded into the
+   ink so they read as part of the background. Cards are opaque, so the art only shows around them.
+   Set as backgrounds inside the media query, so phones never download them. */
+
+body { position: relative; }
+html { overflow-x: clip; }
+main, .footer { position: relative; z-index: 1; }
+
+.backdrop { display: none; }
+
+@media (min-width: 1100px) {
+  .backdrop { display: block; position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .backdrop__art {
+    position: absolute;
+    background: no-repeat center / contain;
+    opacity: 0.4;
+    filter: saturate(0.85);
+  }
+  /* Each fades towards the page's centre line. */
+  .backdrop__art--baron {
+    top: 3rem; right: calc(50% - 50rem); width: 30rem; aspect-ratio: 643 / 1000;
+    background-image: url("img/art-baron.png");
+    -webkit-mask-image: linear-gradient(to left, #000 45%, transparent 95%);
+    mask-image: linear-gradient(to left, #000 45%, transparent 95%);
+  }
+  .backdrop__art--herald {
+    top: 62rem; left: calc(50% - 52rem); width: 32rem; aspect-ratio: 728 / 820;
+    background-image: url("img/art-herald.png");
+    -webkit-mask-image: linear-gradient(to right, #000 40%, transparent 90%);
+    mask-image: linear-gradient(to right, #000 40%, transparent 90%);
+  }
+  .backdrop__art--dragon {
+    top: 124rem; right: calc(50% - 62rem); width: 44rem; aspect-ratio: 1100 / 654;
+    opacity: 0.6;
+    filter: brightness(1.35);
+    background-image: url("img/art-elder-dragon.png");
+    -webkit-mask-image: linear-gradient(to left, #000 40%, transparent 85%);
+    mask-image: linear-gradient(to left, #000 40%, transparent 85%);
+  }
+}
+
 main, .footer { max-width: 76rem; margin: 0 auto; padding: 0 var(--gutter); }
 main { padding-top: calc(var(--nav-height) + 1rem); }
 
