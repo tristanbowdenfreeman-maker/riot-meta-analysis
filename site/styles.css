@@ -53,9 +53,9 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--signal); outlin
 img { display: block; }
 
 /* ---------- Backdrop art ----------
-   Riot's renders of the big objective monsters sit in the side margins on wide screens, faded into the
-   ink so they read as part of the background. Cards are opaque, so the art only shows around them.
-   Set as backgrounds inside the media query, so phones never download them. */
+   Riot's renders of champions and the objective monsters sit in the side margins on wide screens, faded
+   into the ink so they read as part of the background. Cards are opaque, so the art only shows around
+   them. app.js places them down the page, alternating sides; under 1100px there's none. */
 
 body { position: relative; }
 html { overflow-x: clip; }
@@ -65,32 +65,22 @@ main, .footer { position: relative; z-index: 1; }
 
 @media (min-width: 1100px) {
   .backdrop { display: block; position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-  .backdrop__art {
+  .backdrop img {
     position: absolute;
-    background: no-repeat center / contain;
-    opacity: 0.4;
-    filter: saturate(0.85);
+    height: auto;
+    opacity: var(--art-opacity, 0.4);
+    filter: saturate(0.85) brightness(var(--art-brightness, 1));
   }
-  /* Each fades towards the page's centre line. */
-  .backdrop__art--baron {
-    top: 3rem; right: calc(50% - 50rem); width: 30rem; aspect-ratio: 643 / 1000;
-    background-image: url("img/art-baron.png");
-    -webkit-mask-image: linear-gradient(to left, #000 45%, transparent 95%);
-    mask-image: linear-gradient(to left, #000 45%, transparent 95%);
+  /* The inner edge tucks 13rem behind the cards and fades towards the page's centre line. */
+  .backdrop .is-right {
+    left: calc(50% + 20rem);
+    -webkit-mask-image: linear-gradient(to left, #000 45%, transparent 92%);
+    mask-image: linear-gradient(to left, #000 45%, transparent 92%);
   }
-  .backdrop__art--herald {
-    top: 62rem; left: calc(50% - 52rem); width: 32rem; aspect-ratio: 728 / 820;
-    background-image: url("img/art-herald.png");
-    -webkit-mask-image: linear-gradient(to right, #000 40%, transparent 90%);
-    mask-image: linear-gradient(to right, #000 40%, transparent 90%);
-  }
-  .backdrop__art--dragon {
-    top: 124rem; right: calc(50% - 62rem); width: 44rem; aspect-ratio: 1100 / 654;
-    opacity: 0.6;
-    filter: brightness(1.35);
-    background-image: url("img/art-elder-dragon.png");
-    -webkit-mask-image: linear-gradient(to left, #000 40%, transparent 85%);
-    mask-image: linear-gradient(to left, #000 40%, transparent 85%);
+  .backdrop .is-left {
+    right: calc(50% + 20rem);
+    -webkit-mask-image: linear-gradient(to right, #000 45%, transparent 92%);
+    mask-image: linear-gradient(to right, #000 45%, transparent 92%);
   }
 }
 

@@ -1408,6 +1408,46 @@ const onScroll = () => {
 window.addEventListener("scroll", onScroll, { passive: true });
 new ResizeObserver(onScroll).observe(document.body);
 
+// Background art in the side margins on wide screens (styles.css), one piece every 62rem down the page,
+// alternating sides, for as far as the page goes. Baron, Herald and the Elder Dragon come first so they
+// sit beside the opening cards on the insights page. Images load lazily as they scroll near.
+const BACKDROP_ART = [
+  ["baron", 643 / 1000, 30],
+  ["herald", 728 / 820, 32],
+  ["elder-dragon", 1100 / 654, 44, 0.6, 1.35],
+  ["ocean-drake", 1000 / 629, 40],
+  ["velkoz", 774 / 900, 30],
+  ["hextech-drake", 1100 / 495, 46],
+  ["kayle", 501 / 1000, 24],
+  ["cloud-drake", 1000 / 520, 42],
+  ["voidgrub", 476 / 700, 24],
+  ["chemtech-drake", 1000 / 753, 40],
+  ["braum", 560 / 900, 26],
+  ["mountain-drake", 800 / 707, 36],
+];
+const backdrop = document.querySelector(".backdrop");
+const wideScreen = matchMedia("(min-width: 1100px)");
+const placeBackdrop = () => {
+  if (!wideScreen.matches) return;
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const slots = Math.max(1, Math.floor((document.body.scrollHeight / rem - 30) / 62) + 1);
+  if (backdrop.childElementCount === slots) return;
+  backdrop.replaceChildren(...Array.from({ length: slots }, (_, i) => {
+    const [name, ratio, width, opacity, brightness] = BACKDROP_ART[i % BACKDROP_ART.length];
+    const img = Object.assign(new Image(), { src: `img/art-${name}.png`, alt: "", loading: "lazy", decoding: "async" });
+    img.className = i % 2 ? "is-left" : "is-right";
+    img.width = Math.round(width * rem);
+    img.height = Math.round(width * rem / ratio);
+    img.style.top = `${3 + i * 62}rem`;
+    img.style.width = `${width}rem`;
+    if (opacity) img.style.setProperty("--art-opacity", opacity);
+    if (brightness) img.style.setProperty("--art-brightness", brightness);
+    return img;
+  }));
+};
+new ResizeObserver(placeBackdrop).observe(view);
+wideScreen.addEventListener("change", placeBackdrop);
+
 init()
   .then(route)
   .catch((error) => {
