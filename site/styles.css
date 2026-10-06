@@ -78,7 +78,8 @@ main, .footer { position: relative; z-index: 1; }
     mask-image: linear-gradient(to left, #000 45%, transparent 92%);
   }
   .backdrop .is-left {
-    right: calc(50% + 20rem);
+    /* Placed by the face: the head sits in the middle of the left margin, at least 3rem in. */
+    left: calc(max(3rem, 25% - 18.5rem) - var(--art-face) * var(--art-width));
     -webkit-mask-image: linear-gradient(to right, #000 45%, transparent 92%);
     mask-image: linear-gradient(to right, #000 45%, transparent 92%);
   }
@@ -184,7 +185,6 @@ main { padding-top: calc(var(--nav-height) + 1rem); }
 .cta__label span { display: inline-block; transition: transform 300ms var(--ease); }
 .cta:hover .cta__label span { transform: translateX(4px); }
 .cta__sub { font-size: 0.9rem; font-weight: 600; opacity: 0.8; }
-
 
 .site-nav__progress {
   position: absolute;
@@ -417,49 +417,15 @@ tbody tr.link:hover { background: var(--surface-hover); }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
 
 .panel { overflow: hidden; }
-.option {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 88px 80px;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.option.cols-1 { grid-template-columns: minmax(0, 1fr) 88px; }
-.stats.early-game { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 0; }
 .stat.early { display: flex; flex-direction: column; }
-.early .core-item .icons { flex: none; flex-wrap: nowrap; gap: 6px; }
-.early .core-item .icon { width: 44px; height: 44px; }
-.early .core-item strong small { display: block; margin-top: 4px; color: var(--faint); font: 400 0.85rem/1.2 var(--body); letter-spacing: 0; text-transform: none; }
 .early .vs { margin-bottom: 14px; }
 .early .alt { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); color: var(--faint); font-size: 0.85rem; }
 .early .alt .icons { margin: 0; gap: 4px; flex-wrap: nowrap; }
 .early .alt .icon { width: 24px; height: 24px; border-radius: 6px; }
 .early .empty { padding: 12px 0 0; }
 
-.option:last-child { border-bottom: 0; }
-
 .sub-head { margin: 0 0 12px; color: var(--faint); font: 700 0.75rem var(--body); letter-spacing: 0.12em; text-transform: uppercase; }
 .stats.core { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 2rem; }
-.core-card { position: relative; }
-.core-item { display: flex; align-items: center; gap: 14px; margin: 12px 0 10px; min-width: 0; }
-.core-item .icon { flex: none; width: 52px; height: 52px; border-radius: 10px; }
-.core-item strong { min-width: 0; font: 1.3rem/1.05 var(--display); letter-spacing: 0.02em; text-transform: uppercase; }
-.core-arrow { position: absolute; z-index: 1; top: 50%; right: -14px; transform: translateY(-50%); color: var(--accent); font-weight: 700; }
-.panel.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 20px; padding: 12px 20px; }
-.tile { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px 0; }
-
-.option.head {
-  padding-top: 14px;
-  padding-bottom: 14px;
-  color: var(--faint);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-align: right;
-}
-.option.head h3 { margin: 0; color: var(--text); font: 400 1.05rem/1 var(--display); letter-spacing: 0.04em; text-align: left; }
 
 .icons { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .arrow { color: var(--faint); }
@@ -536,7 +502,6 @@ button.rune-page[aria-pressed="true"] { opacity: 1; border-bottom-color: var(--a
 .rune img.round { background: #0c0d0b; }
 .rune.off { opacity: 0.3; filter: grayscale(1); }
 .rune .games { color: var(--faint); }
-.legend { grid-column: 1 / -1; margin: 0; color: var(--faint); font-size: 12px; text-align: center; }
 
 /* ---------- Footer ---------- */
 
@@ -563,7 +528,6 @@ td .moe { margin-left: 6px; color: var(--faint); font-size: 0.8rem; }
 
 .hero--split { display: flex; align-items: center; justify-content: space-between; gap: 2rem 3rem; flex-wrap: wrap; }
 .hero--split > div:first-child { flex: 1 1 26rem; }
-
 
 .kpi .label { color: var(--faint); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .kpi .value { display: inline-block; margin-top: 6px; font: clamp(1.9rem, 3.4vw, 2.6rem)/1 var(--display); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -999,10 +963,6 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   td { font-size: 15px; }
   .champ-cell { gap: 8px; }
   .champ-cell .icon { width: 28px; height: 28px; }
-  .option { grid-template-columns: minmax(0, 1fr) 76px 64px; gap: 10px; padding-left: 14px; padding-right: 14px; }
-  .option.cols-1 { grid-template-columns: minmax(0, 1fr) 76px; }
-  .option .icons { gap: 4px; }
-  .option .icon { width: 30px; height: 30px; }
   .rune-page { grid-template-columns: 1fr auto auto; gap: 12px; padding: 12px; }
   .rune-page .icons > img:nth-child(2), .page-name small { display: none; }
   .rune-board { padding: 16px 8px; }
@@ -1018,7 +978,6 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   .search { flex: 1 1 100%; }
   .search kbd { display: none; }
   .stats.core { grid-template-columns: 1fr; gap: 10px; }
-  .core-arrow { display: none; }
   .bar-row, .ranks .bar-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
   .bar-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
   .objective-list .bar-row, .lane-bars .bar-row { grid-template-columns: minmax(0, 1fr) auto; }
@@ -1051,44 +1010,6 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   .page, .rise { animation: none; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition-duration: 0.01ms !important; }
-}
-
-/* ---------- Champion page: win rate by rank ---------- */
-
-.rank-row {
-  display: grid;
-  grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr) 6rem;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.rank-row .figure small { display: block; color: var(--faint); font-size: 0.8rem; }
-.rank-track { position: relative; height: 28px; }
-.rank-track::before { content: ""; position: absolute; inset: 50% 0 auto; border-top: 1px solid var(--border); }
-.rank-track::after { content: ""; position: absolute; top: 0; bottom: 0; left: var(--even); border-left: 1px dashed var(--faint); }
-.rank-track { background: linear-gradient(var(--stone), var(--stone)) var(--usual) 50% / 2px 14px no-repeat; }
-.rank-whisker { position: absolute; top: calc(50% - 2px); height: 4px; border-radius: 4px; background: rgba(239, 90, 50, 0.35); }
-.rank-dot {
-  position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px rgba(239, 90, 50, 0.25);
-}
-.rank-whisker.under { background: rgba(201, 196, 182, 0.3); }
-.rank-dot.under { background: var(--stone); box-shadow: 0 0 0 3px rgba(201, 196, 182, 0.2); }
-.rank-axis { padding-top: 8px; padding-bottom: 10px; border-bottom: 0; }
-.rank-ticks { position: relative; height: 1rem; color: var(--faint); font-size: 0.75rem; }
-.rank-ticks span { position: absolute; transform: translateX(-50%); }
-
-@media (max-width: 640px) {
-  .rank-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; padding: 12px 14px; }
-  .rank-track, .rank-ticks { grid-column: 1 / -1; grid-row: 2; }
-  .rank-axis > span:empty { display: none; }
 }
 
 /* ---------- Champion page: skill order ---------- */
@@ -1148,6 +1069,177 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   .skill-cells { gap: 2px; }
   .skill-cell { border-radius: 3px; font-size: 0.6rem; }
 }
-.rank-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.rank-emblem { flex: none; width: 48px; height: 48px; object-fit: contain; }
-@media (max-width: 640px) { .rank-emblem { width: 40px; height: 40px; } }
+
+/* ---------- Champion page: dashboard ----------
+   Name, a summary panel (win rate, playstyle, win rate by rank), build beside runes, then the
+   skill order. Below 1000px the pairs stack. */
+
+.champ-dash { padding-top: 1.5rem; }
+.champ-dash section { margin: 0; min-width: 0; }
+.champ-dash h2 { margin: 0 0 0.6rem; font-size: 1.25rem; }
+.champ-dash .back { margin-bottom: 0.75rem; }
+
+.cd-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem 2rem; margin: 0 0 1.25rem; }
+.cd-head .champ-head { margin: 0; gap: 18px; }
+.cd-head .champ-head img { width: 72px; height: 72px; }
+.cd-head .champ-head h1 { font-size: clamp(2.4rem, 4.6vw, 3.6rem); }
+.cd-head .tabs { margin: 0; }
+
+/* Summary: the win rate large, playstyle against the role's average, win rate by rank. */
+.cd-summary { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1fr); margin: 0 0 2rem; }
+.cd-summary > div { padding: 18px 22px; min-width: 0; }
+.cd-summary > div + div { border-left: 1px solid var(--border); }
+.cd-summary .label { display: block; color: var(--faint); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.cd-hero-figure { margin: 10px 0 14px; font: 3.4rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.cd-hero-figure small { margin-left: 8px; color: var(--faint); font: 0.85rem var(--body); }
+.cd-hero-tier { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.9rem; }
+.cd-hero-tier .tier { margin: 0; }
+.cd-hero-more { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 22px 0 0; }
+.cd-hero-more > div { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--pill); }
+.cd-hero-more dt { color: var(--faint); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.cd-hero-more dd { margin: 6px 0 0; font: 1.3rem/1 var(--display); font-variant-numeric: tabular-nums; }
+
+.cd-vs > .label { margin-bottom: 6px; }
+.vs-row { display: grid; grid-template-columns: 6.5rem 3.6rem minmax(0, 1fr) 2.6rem; align-items: center; gap: 10px; padding: 11px 0; }
+.vs-row + .vs-row { border-top: 1px solid var(--border); }
+.vs-row .label { margin: 0; }
+.vs-row strong { font: 1.1rem/1 var(--display); font-variant-numeric: tabular-nums; text-align: right; }
+.vs-bar { position: relative; height: 8px; border-radius: 4px; background: var(--pill); }
+.vs-bar::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; border-left: 1px solid var(--faint); }
+.vs-bar span { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+.vs-bar .up { background: var(--accent); }
+.vs-bar .down { background: var(--stone); }
+.vs-diff { font-size: 0.8rem; text-align: right; font-variant-numeric: tabular-nums; }
+
+.cd-rank .label { margin-bottom: 4px; }
+.rank-trend { display: block; width: 100%; height: auto; overflow: visible; }
+.rank-trend line.even { stroke: var(--faint); stroke-dasharray: 3 4; }
+.rank-trend line.usual { stroke: var(--border); }
+.rank-trend polyline { fill: none; stroke: var(--accent); stroke-width: 2; }
+.rank-trend circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.rank-trend circle.under { fill: var(--stone); }
+.rank-trend text { fill: var(--muted); font: 600 11px var(--body); text-anchor: middle; }
+.rank-trend text.value { fill: var(--text); font-size: 12px; }
+.rank-trend text.faint { fill: var(--faint); }
+.rank-trend text.games { fill: var(--faint); font-size: 10px; font-weight: 400; }
+.rank-trend text.axis { fill: var(--faint); font-size: 10px; text-anchor: start; }
+.cd-warn { margin: -1.25rem 0 1.5rem; color: var(--bad); font-size: 0.9rem; }
+
+.cd-pair { display: grid; gap: 1.5rem; align-items: start; margin-bottom: 2rem; }
+.cd-pair-build { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+.cd-pair-skill { grid-template-columns: 1fr; }
+
+/* Build: one row per slot, the same columns all the way down. */
+.build-list { padding: 4px 0; }
+.build-row { display: grid; grid-template-columns: 4.5rem auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--border); }
+.build-row .label, .build-later .label { color: var(--faint); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.build-row .icons { flex-wrap: nowrap; gap: 4px; }
+.build-row .icon { width: 30px; height: 30px; }
+.build-row strong { font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.build-row .figure small { font-size: 0.72rem; }
+.build-later { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px 16px 8px; }
+.build-later .label { padding-top: 6px; }
+.build-later > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.cd-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 2px; border: 1px solid var(--border); border-radius: 999px; font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cd-chip .icon { width: 24px; height: 24px; border-radius: 50%; }
+
+/* Runes: the two pages as tabs, every rune with its pick rate, the picked ones with win rate too. */
+.champ-dash .rune-pages { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+.champ-dash .rune-page { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 10px 16px; }
+.champ-dash .page-name strong { white-space: nowrap; }
+.champ-dash .rune-board { grid-template-columns: repeat(3, auto); justify-content: space-evenly; gap: 12px; padding: 14px 10px; }
+.champ-dash .rune-tree h4 { margin-bottom: 10px; }
+.champ-dash .rune-row { gap: 2px; margin: 0 0 8px; align-items: flex-start; }
+.champ-dash .rune { width: 50px; font-size: 11px; }
+.champ-dash .rune img { width: 32px; height: 32px; margin-bottom: 3px; }
+.champ-dash .rune.keystone img { width: 42px; height: 42px; }
+
+@media (max-width: 1180px) {
+  .cd-pair-build, .cd-pair-skill { grid-template-columns: 1fr; }
+}
+@media (max-width: 1000px) {
+  .cd-summary { grid-template-columns: 1fr 1fr; }
+  .cd-summary .cd-rank { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--border); }
+}
+@media (max-width: 600px) {
+  .cd-summary { grid-template-columns: 1fr; }
+  .cd-summary > div + div { border-left: 0; border-top: 1px solid var(--border); }
+  .champ-dash .rune-board { grid-template-columns: 1fr; }
+}
+
+/* Item hover card: name, cost, stats and effects from Data Dragon. */
+.item-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  width: min(20rem, calc(100vw - 16px));
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #22241f;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  pointer-events: none;
+}
+.item-tip[hidden] { display: none; }
+.item-tip-head { display: flex; align-items: center; gap: 10px; }
+.item-tip-head img { width: 40px; height: 40px; border-radius: 8px; }
+.item-tip-head strong { display: block; color: var(--text); font-size: 0.95rem; }
+.item-tip-head .gold { color: #e7c46a; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.item-tip-stats { margin: 10px 0 0; padding: 8px 0 0; border-top: 1px solid var(--border); list-style: none; color: var(--text); }
+.tip-text { margin: 8px 0 0; }
+.tip-text b { color: var(--accent); font-weight: 700; }
+.item-tip-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 0.75rem; }
+
+/* Abilities: pick one on the left, its clip plays on the right. */
+.cd-abilities { margin-top: 2rem; }
+.ability-panel { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 24px; padding: 20px; }
+.ability-picks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.ability-pick {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+}
+.ability-pick img { width: 100%; max-width: 56px; height: auto; aspect-ratio: 1; border: 2px solid transparent; border-radius: 10px; opacity: 0.55; transition: opacity 0.2s var(--ease), border-color 0.2s var(--ease); }
+.ability-pick b {
+  position: absolute;
+  top: 38px;
+  left: 50%;
+  translate: 10px 0;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--text);
+  font-size: 0.65rem;
+  line-height: 18px;
+}
+.ability-pick:hover img { opacity: 0.85; }
+.ability-pick[aria-selected="true"] { color: var(--text); }
+.ability-pick[aria-selected="true"] img { border-color: var(--accent); opacity: 1; }
+.ability-info { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.ability-info h3 { display: flex; align-items: baseline; gap: 10px; margin: 0; font: 1.5rem/1.1 var(--display); text-transform: uppercase; }
+.ability-info h3 span { color: var(--accent); font-size: 0.85rem; letter-spacing: 0.08em; }
+.ability-cd { margin: 6px 0 0; color: var(--faint); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.ability-text { margin: 10px 0 0; color: var(--muted); font-size: 0.88rem; line-height: 1.55; }
+.ability-video { position: relative; align-self: start; overflow: hidden; aspect-ratio: 16 / 9; border: 1px solid var(--border); border-radius: 12px; background: #0e0f0c; }
+.ability-video video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ability-novideo { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--faint); font-size: 0.85rem; }
+.ability-novideo[hidden] { display: none; }
+@media (max-width: 1000px) {
+  .ability-panel { grid-template-columns: 1fr; }
+  .ability-video { order: -1; }
+}

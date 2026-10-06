@@ -42,7 +42,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 const wr = (x) => `<span class="${x >= 0.5 ? "good" : "muted"}">${pct(x, 2)}</span>`;
 // A 95% margin of error in percentage points, e.g. "±5.1".
 const moe = (x) => `±${(x * 100).toFixed(1)}`;
-const signed = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x * 100).toFixed(0)}%`;
+const signed = (x) => { const r = Math.round(x * 100); return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r)}%`; };
 // Data Dragon versions run 10 behind the patch names players see: game version 16.19 is patch 26.19.
 const patchName = (version) => version.replace(/^(\d+)/, (major) => String(Number(major) + 10));
 
@@ -50,16 +50,15 @@ const champImg = (c, cls = "") =>
   `<img class="icon ${cls}" src="${IMG}/${db.version}/img/champion/${c.champion_key}.png" alt="${esc(c.champion_name)}" title="${esc(c.champion_name)}" loading="lazy" width="36" height="36">`;
 const itemImg = (id) => {
   const name = db.items.get(id)?.item_name ?? `Item ${id}`;
-  return `<img class="icon" src="${IMG}/${db.version}/img/item/${id}.png" alt="${esc(name)}" title="${esc(name)}" loading="lazy" width="36" height="36">`;
+  return `<img class="icon" src="${IMG}/${db.version}/img/item/${id}.png" alt="${esc(name)}" data-item="${id}" loading="lazy" width="36" height="36">`;
 };
 const spellImg = (id) => {
   const s = db.spells.get(id);
-  return s ? `<img class="icon" src="${IMG}/${db.version}/img/spell/${s.spell_key}.png" alt="${esc(s.spell_name)}" title="${esc(s.spell_name)}" loading="lazy" width="36" height="36">` : "";
+  return s ? `<img class="icon" src="${IMG}/${db.version}/img/spell/${s.spell_key}.png" alt="${esc(s.spell_name)}" data-spell="${esc(s.spell_key)}" loading="lazy" width="36" height="36">` : "";
 };
 const perkImg = (path, name, cls = "") =>
-  path ? `<img class="icon round ${cls}" src="${IMG}/img/${path}" alt="${esc(name)}" title="${esc(name)}" loading="lazy">` : "";
+  path ? `<img class="icon round ${cls}" src="${IMG}/img/${path}" alt="${esc(name)}" data-perk="${esc(path)}" loading="lazy">` : "";
 
-const figure = (share, games) => `<div class="figure"><strong>${pct(share, 2)}</strong><small>${plural(games, "game")}</small></div>`;
 
 // ---------- Data ----------
 
@@ -267,11 +266,135 @@ function renderTierList(role) {
 
 const SKILL_KEYS = ["Q", "W", "E", "R"];
 // Ability names, icons and max ranks from Data Dragon; letters and the usual ranks if it can't be reached.
-const abilities = (champ) => (files[`abilities/${champ.champion_key}`] ??=
+const championDetails = (champ) => (files[`abilities/${champ.champion_key}`] ??=
   fetch(`${IMG}/${db.version}/data/en_GB/champion/${champ.champion_key}.json`)
     .then((r) => (r.ok ? r.json() : null))
-    .then((d) => d?.data?.[champ.champion_key]?.spells ?? null)
+    .then((d) => d?.data?.[champ.champion_key] ?? null)
     .catch(() => null));
+const abilities = (champ) => championDetails(champ).then((d) => d?.spells ?? null);
+
+// The champion's passive and four abilities, each with Riot's short clip of it in game (the same
+// clips as the official champion pages), one playing at a time.
+const ABILITY_VIDEO = "https://d28xe8vt774jo5.cloudfront.net/champion-abilities";
+function abilityShowcase(champ, details) {
+  if (!details?.spells) return "";
+  const id = String(champ.champion_id).padStart(4, "0");
+  const list = [
+    { key: "P", label: "Passive", name: details.passive.name, text: details.passive.description, img: `${IMG}/${db.version}/img/passive/${details.passive.image.full}` },
+    ...details.spells.map((s, i) => ({
+      key: SKILL_KEYS[i], label: SKILL_KEYS[i], name: s.name, text: s.description,
+      img: `${IMG}/${db.version}/img/spell/${s.image.full}`,
+      cooldown: s.cooldownBurn && s.cooldownBurn !== "0" ? s.cooldownBurn : "",
+    })),
+  ].map((a) => ({ ...a, video: `${ABILITY_VIDEO}/${id}/ability_${id}_${a.key}1.webm` }));
+  return { list, html: `<section class="cd-abilities">
+      <h2>Abilities</h2>
+      <div class="panel ability-panel">
+        <div class="ability-side">
+          <div class="ability-picks" role="tablist">${list.map((a, i) => `<button class="ability-pick" role="tab" aria-selected="${i === 0}" data-ability="${i}">
+            <img src="${a.img}" alt="" width="56" height="56" loading="lazy"><b>${a.label === "Passive" ? "P" : a.key}</b>
+            <span>${esc(a.name)}</span></button>`).join("")}</div>
+          <div class="ability-info"></div>
+        </div>
+        <div class="ability-video"><video muted loop playsinline autoplay preload="none"></video><p class="ability-novideo" hidden>No clip for this ability.</p></div>
+      </div>
+    </section>` };
+}
+
+// Hover cards for items, summoner spells and runes, with details from Data Dragon fetched once on
+// the first hover of each kind.
+const ddragon = (file, pick) => (files[`ddragon/${file}`] ??=
+  fetch(`${IMG}/${db.version}/data/en_GB/${file}.json`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => (d ? pick(d) : null))
+    .catch(() => null));
+const itemDetails = () => ddragon("item", (d) => d.data);
+const spellDetails = () => ddragon("summoner", (d) => d.data);
+// Runes keyed by icon path, the one thing the rune images already carry.
+const runeDetails = () => ddragon("runesReforged", (trees) =>
+  Object.fromEntries(trees.flatMap((t) => t.slots.flatMap((s) => s.runes)).map((r) => [r.icon, r])));
+
+// Data Dragon writes descriptions in its own markup. Keep the words and line breaks, drop the tags.
+const plainText = (html = "") => html.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "")
+  .replace(/&nbsp;/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+const paragraphs = (text, cls = "tip-text") => text.split(/\n{2,}/).filter(Boolean)
+  .map((p) => `<p class="${cls}">${esc(p).replace(/\n/g, "<br>")}</p>`).join("");
+
+const tipHead = (src, name, sub) => `<div class="item-tip-head">
+    <img src="${src}" alt="" width="40" height="40">
+    <div><strong>${esc(name)}</strong>${sub ? `<span class="gold">${sub}</span>` : ""}</div>
+  </div>`;
+
+function itemCard(id, details, note) {
+  const ours = db.items.get(id);
+  const gold = details?.gold?.total ?? ours?.total_gold;
+  const desc = details?.description ?? "";
+  const stats = plainText(desc.match(/<stats>([\s\S]*?)<\/stats>/i)?.[1] ?? "").split("\n").filter(Boolean);
+  const effects = [...desc.replace(/<stats>[\s\S]*?<\/stats>/i, "")
+    .matchAll(/<(passive|active)>([\s\S]*?)<\/\1>([\s\S]*?)(?=<(?:passive|active)>|<\/mainText>|$)/gi)]
+    .map(([, kind, title, body]) => ({ kind, title: plainText(title), body: plainText(body).replace(/\n+/g, " ") }));
+  return `${tipHead(`${IMG}/${db.version}/img/item/${id}.png`, details?.name ?? ours?.item_name ?? `Item ${id}`, gold ? `${num(gold)} gold` : "")}
+    ${stats.length ? `<ul class="item-tip-stats">${stats.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
+    ${effects.map((e) => `<p class="tip-text"><b>${e.kind === "active" ? "Active" : "Passive"}: ${esc(e.title)}</b> ${esc(e.body)}</p>`).join("")}
+    ${note ? `<p class="item-tip-note">${esc(note)}</p>` : ""}`;
+}
+
+function spellCard(key, details) {
+  const ours = [...db.spells.values()].find((s) => s.spell_key === key);
+  return `${tipHead(`${IMG}/${db.version}/img/spell/${key}.png`, details?.name ?? ours?.spell_name ?? key, details ? `${details.cooldownBurn}s cooldown` : "")}
+    ${details ? paragraphs(plainText(details.description)) : ""}`;
+}
+
+function runeCard(path, name, details, loaded) {
+  // Stat shards aren't in runesReforged; their names already say what they give.
+  return `${tipHead(`${IMG}/img/${path}`, details?.name ?? name, details || !loaded ? "" : "Stat shard")}
+    ${details ? paragraphs(plainText(details.shortDesc)) : ""}`;
+}
+
+// What each kind of icon looks like, how to draw its card without details, and how to fetch them.
+const TIPS = [
+  ["img[data-item]", (img) => Number(img.dataset.item), (id, d, img) => itemCard(id, d?.[id], img.closest("[data-note]")?.dataset.note), itemDetails],
+  ["img[data-spell]", (img) => img.dataset.spell, (key, d) => spellCard(key, d?.[key]), spellDetails],
+  ["img[data-perk]", (img) => img.dataset.perk, (path, d, img) => runeCard(path, img.alt, d?.[path], !!d), runeDetails],
+];
+
+// One hover card for every item, summoner spell and rune icon on the site.
+function wireTips() {
+  const tip = document.createElement("div");
+  tip.className = "item-tip";
+  tip.hidden = true;
+  tip.setAttribute("role", "tooltip");
+  document.body.append(tip);
+  let target = null;
+  const place = () => {
+    const box = target.getBoundingClientRect();
+    const { width, height } = tip.getBoundingClientRect();
+    let left = box.left + box.width / 2 - width / 2;
+    left = Math.min(Math.max(left, 8), innerWidth - width - 8);
+    const top = box.top - height - 10 >= 8 ? box.top - height - 10 : box.bottom + 10;
+    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  };
+  document.addEventListener("mouseover", async (e) => {
+    const kind = TIPS.find(([selector]) => e.target.closest?.(selector));
+    if (!kind) return;
+    const [selector, idOf, card, load] = kind;
+    const img = e.target.closest(selector);
+    if (img === target) return;
+    target = img;
+    const id = idOf(img);
+    tip.innerHTML = card(id, null, img);
+    tip.hidden = false;
+    place();
+    const details = await load();
+    if (target !== img || !details) return;
+    tip.innerHTML = card(id, details, img);
+    place();
+  });
+  document.addEventListener("mouseout", (e) => {
+    if (target && e.target === target && !target.contains(e.relatedTarget)) { target = null; tip.hidden = true; }
+  });
+  window.addEventListener("scroll", () => { target = null; tip.hidden = true; }, { passive: true });
+}
 
 // The skill taken at each level 1–18 (1–3 = Q, W, E; 4 = R). path.levels is the most common pick
 // at each level, taken separately, so it can ask for a sixth point, or put R a level late when
@@ -333,39 +456,6 @@ function skillOrder(champ, rows, spells) {
 
 // ---------- Champion page ----------
 
-// Option panel columns: [heading, cell]. The default is pick rate then win rate.
-const shareColumn = (label = "Pick rate") => [label, (r) => figure(r.pick_share, r.games)];
-const winColumn = ["Win rate", (r) => `<div class="figure">${wr(r.win_rate)}</div>`];
-// Win rate with its 95% margin of error. Matchup rows are small, so this uses the widest margin
-// (a 50% win rate), which doesn't collapse to ±0 on a 5-0 record.
-const winMarginColumn = ["Win rate", (r) => `<div class="figure">${wr(r.win_rate)}<small>${moe(1.96 * Math.sqrt(0.25 / r.games))}</small></div>`];
-
-function optionPanel(title, rows, icons, columns = [shareColumn(), winColumn], empty = `No option has ${num(db.minGames)}+ games yet.`) {
-  const cls = columns.length === 1 ? " cols-1" : "";
-  const body = rows.length
-    ? rows.map((r, i) => `<div class="option${cls} rise" style="--i:${i}">
-        <div class="icons">${icons(r)}</div>${columns.map(([, cell]) => cell(r)).join("")}
-      </div>`).join("")
-    : `<div class="empty">${empty}</div>`;
-  return `<div class="panel"><div class="option${cls} head"><h3>${title}</h3>${columns.map(([label]) => `<span>${label}</span>`).join("")}</div>${body}</div>`;
-}
-
-// An early-game card: the most picked option, with the runner-up underneath when it has enough games.
-// `pick` turns a row into [icons, name, detail].
-function earlyCard(label, rows, pick) {
-  const [first, second] = rows;
-  if (!first) return `<div class="stat early"><div class="label">${label}</div><div class="empty">No option has ${num(db.minGames)}+ games yet.</div></div>`;
-  const [icons, name, detail] = pick(first);
-  return `<div class="stat early">
-    <div class="label">${label}</div>
-    <div class="core-item"><span class="icons">${icons}</span><strong>${name}${detail ? `<small>${detail}</small>` : ""}</strong></div>
-    <div class="vs">${pct(first.pick_share)} of games · ${wr(first.win_rate)} win rate</div>
-    <div class="alt">${second
-      ? `<span class="icons">${pick(second)[0]}</span><span>Otherwise ${pct(second.pick_share)} · ${pct(second.win_rate)} win rate</span>`
-      : `<span>No other option has ${num(db.minGames)}+ games</span>`}</div>
-  </div>`;
-}
-
 const ordinal = (n) => `${n}${[, "st", "nd", "rd"][n] ?? "th"}`;
 const itemName = (id) => esc(db.items.get(id)?.item_name ?? `Item ${id}`);
 
@@ -381,9 +471,9 @@ const spellName = (id) => esc(db.spells.get(id)?.spell_name ?? "");
 
 // One grid cell: icon plus win rate, pick share and games, dimmed unless `on`.
 function runeCell(icon, stats, on, extraClass = "") {
-  const figures = stats
-    ? `<div class="${on ? "good" : ""}">${pct(stats.win_rate)}</div><div>${pct(stats.pick_share)}</div><div class="games">${num(stats.games)}</div>`
-    : `<div class="faint">–</div>`;
+  // Every rune shows how often it is taken; the most picked ones also show their win rate.
+  const figures = !stats ? `<div class="faint">–</div>`
+    : `${on ? `<div class="good">${pct(stats.win_rate)}</div>` : ""}<div class="games">${pct(stats.pick_share)}</div>`;
   return `<div class="rune${extraClass}${on ? "" : " off"}">${icon}${figures}</div>`;
 }
 
@@ -435,50 +525,41 @@ function runeBoard(page, picks, shardPicks) {
     <div class="rune-tree">${title(page.primary_tree_id)}${primaryRows}</div>
     <div class="rune-tree">${title(page.secondary_tree_id)}${secondaryRows}</div>
     <div class="rune-tree shards"><h4>Shards</h4>${shardRows}</div>
-    <p class="legend">Under each rune: its win rate, the share of players on this rune page who take it, and the number of games.</p>
   </div>`;
 }
 
-// Playstyle cards: the champion's stat in this role against everyone in the role.
+// Playstyle: the champion's stat in this role against the role's average.
 const PLAYSTYLE = [["kda", "KDA", 2], ["cs_per_min", "CS / min", 1], ["damage_per_min", "Damage / min", 0], ["vision_per_min", "Vision / min", 2]];
 
-function playstyleCard(stats, key, label, digits, role) {
-  const value = stats[key];
-  const average = stats[`role_${key}`];
-  const fmt = (x) => (x == null ? "–" : x.toLocaleString("en-GB", { maximumFractionDigits: digits, minimumFractionDigits: digits }));
-  const diff = value != null && average ? value / average - 1 : null;
-  return `<div class="stat"><div class="label">${label}</div><div class="value">${fmt(value)}</div>
-    <div class="vs">${diff == null ? "" : `<span class="${diff >= 0 ? "good" : "muted"}">${signed(diff)}</span> `}vs the average ${ROLE_PLAYER[role]} (${fmt(average)})</div></div>`;
-}
-
-// Win rate by rank: one row per band, the dot on a 35–65% scale with its 95% margin of error,
-// a dashed line at 50% and a tick at the champion's win rate across every rank.
+// Win rate by rank: one point per band on a 35–65% scale, with a dashed line at 50% and a faint
+// line at the champion's win rate across every rank.
 const RANK_BANDS = [["EMERALD", "Emerald", "emerald"], ["DIAMOND", "Diamond", "diamond"], ["MASTER+", "Master+", "master"]];
 const RANK_SCALE = [0.35, 0.65];
-const onRankScale = (rate) =>
-  `${(Math.min(1, Math.max(0, (rate - RANK_SCALE[0]) / (RANK_SCALE[1] - RANK_SCALE[0]))) * 100).toFixed(2)}%`;
 
-function rankChart(rows, overall) {
-  const body = RANK_BANDS.map(([band, label, emblem], i) => {
-    const r = rows.find((x) => x.rank_band === band);
-    const name = `<span class="rank-name"><img class="rank-emblem" src="img/rank-${emblem}.png" alt="" width="48" height="48" loading="lazy"><span class="name">${label}<small>${r ? `${plural(r.games, "game")} · ${pct(r.pick_rate)} pick rate` : "No games yet"}</small></span></span>`;
-    const track = (marks = "") => `<span class="rank-track" style="--even: ${onRankScale(0.5)}; --usual: ${onRankScale(overall)}">${marks}</span>`;
-    if (!r || !enoughGames(r)) {
-      return `<div class="rank-row rise" style="--i:${i}">${name}${track()}<div class="figure"><small>Under ${num(db.minGames)} games</small></div></div>`;
-    }
-    const margin = 1.96 * Math.sqrt(0.25 / r.games);
-    return `<div class="rank-row rise" style="--i:${i}">${name}${track(`
-        <span class="rank-whisker${r.win_rate < 0.5 ? " under" : ""}" style="left: ${onRankScale(r.win_rate - margin)}; right: calc(100% - ${onRankScale(r.win_rate + margin)})"></span>
-        <span class="rank-dot${r.win_rate < 0.5 ? " under" : ""}" style="left: ${onRankScale(r.win_rate)}"></span>`)}
-      <div class="figure">${wr(r.win_rate)}<small>${moe(margin)}</small></div>
-    </div>`;
-  }).join("");
-  const axis = RANK_SCALE[0] + (RANK_SCALE[1] - RANK_SCALE[0]) / 2;
-  return `<div class="panel rank-chart">${body}
-    <div class="rank-row rank-axis"><span></span><span class="rank-ticks">
-      ${[RANK_SCALE[0], axis, RANK_SCALE[1]].map((t) => `<span style="left: ${onRankScale(t)}">${pct(t, 0)}</span>`).join("")}
-    </span><span></span></div>
-  </div>`;
+// Win rate by rank as a small line chart: one point per band on a 35–65% scale with its 95% margin
+// of error, a dashed line at 50% and a faint one at the champion's win rate across every rank.
+function rankTrend(rows, overall) {
+  const [w, h, top, bottom, side] = [300, 190, 22, 74, 34];
+  const y = (x) => top + (1 - (Math.min(Math.max(x, RANK_SCALE[0]), RANK_SCALE[1]) - RANK_SCALE[0]) / (RANK_SCALE[1] - RANK_SCALE[0])) * (h - top - bottom);
+  const x = (i) => side + i * ((w - side * 2) / (RANK_BANDS.length - 1));
+  const points = RANK_BANDS.map(([band, label, emblem], i) => {
+    const r = rows.find((row) => row.rank_band === band);
+    return { i, label, emblem, r, ok: r && enoughGames(r) };
+  });
+  const shown = points.filter((p) => p.ok);
+  const line = shown.map((p) => `${x(p.i)},${y(p.r.win_rate)}`).join(" ");
+  return `<svg class="rank-trend" viewBox="0 0 ${w} ${h}" role="img" aria-label="Win rate by rank">
+    <line class="even" x1="0" x2="${w}" y1="${y(0.5)}" y2="${y(0.5)}"/><text class="axis" x="0" y="${y(0.5) - 4}">50%</text>
+    <line class="usual" x1="0" x2="${w}" y1="${y(overall)}" y2="${y(overall)}"/>
+    ${shown.length > 1 ? `<polyline points="${line}"/>` : ""}
+    ${points.map((p) => p.ok ? `
+      <circle class="${p.r.win_rate < 0.5 ? "under" : ""}" cx="${x(p.i)}" cy="${y(p.r.win_rate)}" r="5"/>
+      <text class="value" x="${x(p.i)}" y="${y(p.r.win_rate) - 11}">${(p.r.win_rate * 100).toFixed(1)}%</text>`
+      : `<text class="value faint" x="${x(p.i)}" y="${y(0.5) - 8}">–</text>`).join("")}
+    ${points.map((p) => `<image href="img/rank-${p.emblem}.png" x="${x(p.i) - 14}" y="${h - 66}" width="28" height="28"/>
+      <text class="band" x="${x(p.i)}" y="${h - 20}">${p.label}</text>
+      <text class="games" x="${x(p.i)}" y="${h - 4}">${p.r ? plural(p.r.games, "game") : "no games"}</text>`).join("")}
+  </svg>`;
 }
 
 async function renderChampion(key, role, ticket) {
@@ -493,12 +574,14 @@ async function renderChampion(key, role, ticket) {
   const roles = allRoles.filter((r) => r.tier != null || r.games >= db.minGames || r.role === role);
 
   view.innerHTML = `<div class="loading">Loading ${esc(champ.champion_name)}…</div>`;
-  const [[starters, boots, core, late, pages, runePicks, shardPicks, spells, ranks, skillPaths], abilitySpells] = await Promise.all([
+  const [[starters, boots, core, late, pages, runePicks, shardPicks, spells, ranks, skillPaths], champDetails] = await Promise.all([
     Promise.all(["champion_starter_sets", "champion_boots", "champion_core_items", "champion_late_items", "champion_rune_stats",
       "champion_rune_picks", "champion_shard_picks", "champion_spell_stats", "champion_rank_win_rate", "champion_skill_paths"].map(load)),
-    abilities(champ),
+    championDetails(champ),
   ]);
   if (ticket !== navigation) return;  // the reader has already moved on
+  const abilitySpells = champDetails?.spells ?? null;
+  const showcase = abilityShowcase(champ, champDetails);
 
   const mine = (rows) => forChampion(rows, champ.champion_id, role).sort(byGames);
   const top = (rows, n) => rows.filter(enoughGames).slice(0, n);
@@ -507,13 +590,6 @@ async function renderChampion(key, role, ticket) {
     mine(runePicks).filter((p) => p.page_rank === page.page_rank),
     mine(shardPicks).filter((s) => s.page_rank === page.page_rank));
 
-  const opponent = (r) => {
-    const o = db.champions.get(r.opponent_id);
-    return o ? `${champImg(o, "round")}<span class="name">${esc(o.champion_name)}</span>` : "";
-  };
-  const ranked = counterPicks(champ.champion_id, role, stats.win_rate);
-  const bestVs = ranked.filter((m) => m.score > stats.win_rate).slice(0, 5);
-  const worstVsRows = worstVs(champ.champion_id, role, stats.win_rate).slice(0, 5);
 
   // The core: the three items finished 1st to 3rd most often, in the order they usually come.
   // After the core: every other finished item, wherever it was built, out of all the champion's
@@ -524,122 +600,102 @@ async function renderChampion(key, role, ticket) {
   const inCore = new Set(coreThree.map((r) => r.item_id));
   const rest = new Map();
   for (const r of [...coreRows, ...mine(late)].filter((r) => !inCore.has(r.item_id))) {
-    const item = rest.get(r.item_id) ?? { item_id: r.item_id, games: 0, slots: 0 };
+    const item = rest.get(r.item_id) ?? { item_id: r.item_id, games: 0, wins: 0, slots: 0 };
     item.games += r.games;
+    item.wins += r.wins;
     item.slots += r.avg_slot * r.games;
     rest.set(r.item_id, item);
   }
   const restRows = [...rest.values()].filter((r) => r.games >= 3).sort(byGames).slice(0, 8)
-    .map((r) => ({ ...r, avg_slot: r.slots / r.games, pick_share: r.games / timelineGames }));
+    .map((r) => ({ ...r, avg_slot: r.slots / r.games, win_rate: r.wins / r.games, pick_share: r.games / timelineGames }));
 
-  // Why a role has no tier: the tier list needs a 1% pick rate in the role, and the role must be
-  // 10% of the champion's games.
-  const championGames = allRoles.reduce((sum, r) => sum + r.games, 0);
-  const unranked = stats.pick_rate < 0.01
-    ? ` No tier here, because only ${pct(stats.pick_rate, 2)} of ${ROLE_PLAYER[role]}s pick ${esc(champ.champion_name)} (the tier list needs 1%).`
-    : ` No tier here, because only ${pct(stats.games / championGames, 0)} of ${esc(champ.champion_name)}'s games are in this role (the tier list needs 10%).`;
-  const sample = `Based on ${plural(stats.games, "game")} played as a ${ROLE_PLAYER[role]}.${stats.tier == null ? unranked : ""}
-    ${stats.games < db.minGames
-      ? "That's too few games to rely on, so treat these numbers as rough."
-      : `Runes, spells and items need at least ${num(db.minGames)} games to be shown, so rare picks don't skew the picture.`}`;
+  // Dashboard style: a summary panel (win rate, playstyle against the role, win rate by rank),
+  // the build beside the runes, then the skill order.
+  const buildRow = (label, row, pick) => {
+    if (!row) return `<div class="build-row"><span class="label">${label}</span><span class="faint">Not enough games yet</span></div>`;
+    const [icons, name] = pick(row);
+    return `<div class="build-row"><span class="label">${label}</span><span class="icons">${icons}</span><strong>${name}</strong>
+      <span class="figure">${wr(row.win_rate)}<small>${pct(row.pick_share)} of games</small></span></div>`;
+  };
+  const playstyle = PLAYSTYLE.map(([key, label, digits]) => {
+    const value = stats[key];
+    const average = stats[`role_${key}`];
+    const diff = value != null && average ? value / average - 1 : null;
+    // The bar runs from the middle: right when the champion is above the role's average, up to ±30%.
+    const size = diff == null ? 0 : Math.min(Math.abs(diff), 0.3) / 0.3 * 50;
+    return `<div class="vs-row"><span class="label">${label}</span>
+      <strong>${value == null ? "–" : value.toLocaleString("en-GB", { maximumFractionDigits: digits, minimumFractionDigits: digits })}</strong>
+      <span class="vs-bar"><span class="${diff >= 0 ? "up" : "down"}" style="${diff >= 0 ? "left: 50%" : `right: 50%`}; width: ${size}%"></span></span>
+      <span class="${diff >= 0 ? "good" : "muted"} vs-diff">${diff == null ? "" : signed(diff)}</span></div>`;
+  }).join("");
 
-  view.innerHTML = `<div class="page">
+  view.innerHTML = `<div class="page champ-dash">
     <a class="back" href="#/role/${role}">← Tier list</a>
-    <div class="champ-head">
-      <img src="${IMG}/${db.version}/img/champion/${champ.champion_key}.png" alt="">
-      <div>
-        <h1>${esc(champ.champion_name)}</h1>
-        <p class="sub">${[...new Set([ROLE_NAME[role], champ.primary_class])].map(esc).join(" · ")}</p>
+    <div class="cd-head">
+      <div class="champ-head">
+        <img src="${IMG}/${db.version}/img/champion/${champ.champion_key}.png" alt="">
+        <div>
+          <h1>${esc(champ.champion_name)}</h1>
+          <p class="sub">${[...new Set([ROLE_NAME[role], champ.primary_class])].map(esc).join(" · ")}</p>
+        </div>
+      </div>
+      ${roles.length > 1 ? tabs(roles.map((r) => [r.role, ROLE_NAME[r.role]]), role, (r) => `#/champion/${champ.champion_key}/${r}`) : ""}
+    </div>
+    <div class="cd-summary panel">
+      <div class="cd-hero">
+        <span class="label">Win rate</span>
+        <div class="cd-hero-figure">${pct(stats.win_rate, 2)}<small>${moe(stats.win_rate_moe)}</small></div>
+        <div class="cd-hero-tier">${stats.tier ? `<span class="tier tier-${stats.tier}">${stats.tier}</span> tier among ${ROLE_PLAYER[role]}s` : "Not ranked"}</div>
+        <dl class="cd-hero-more">
+          <div><dt>Pick</dt><dd>${pct(stats.pick_rate, 2)}</dd></div>
+          <div><dt>Ban</dt><dd>${pct(stats.ban_rate, 2)}</dd></div>
+          <div><dt>Games</dt><dd>${num(stats.games)}</dd></div>
+        </dl>
+      </div>
+      <div class="cd-vs">
+        <span class="label">Against the average ${ROLE_PLAYER[role]}</span>
+        ${playstyle}
+      </div>
+      <div class="cd-rank">
+        <span class="label">Win rate by rank</span>
+        ${rankTrend(mine(ranks), stats.win_rate)}
       </div>
     </div>
-    ${roles.length > 1 ? tabs(roles.map((r) => [r.role, ROLE_NAME[r.role]]), role, (r) => `#/champion/${champ.champion_key}/${r}`) : ""}
+    ${stats.games < db.minGames ? `<p class="cd-warn">Only ${plural(stats.games, "game")} as a ${ROLE_PLAYER[role]}, so treat these numbers as rough.</p>` : ""}
 
-    <div class="stats">
-      <div class="stat"><div class="label">Tier</div><div class="value">${stats.tier ? `<span class="tier tier-${stats.tier}">${stats.tier}</span>` : "–"}</div></div>
-      <div class="stat"><div class="label">Win rate <span class="faint">${moe(stats.win_rate_moe)}</span></div><div class="value">${pct(stats.win_rate, 2)}</div></div>
-      <div class="stat"><div class="label">Pick rate</div><div class="value">${pct(stats.pick_rate, 2)}</div></div>
-      <div class="stat"><div class="label">Ban rate</div><div class="value">${pct(stats.ban_rate, 2)}</div></div>
-      <div class="stat"><div class="label">Games</div><div class="value">${num(stats.games)}</div></div>
+
+    <div class="cd-pair cd-pair-build">
+      <section>
+        <h2>Build</h2>
+        <div class="panel build-list">
+          ${buildRow("Spells", top(mine(spells), 1)[0], (r) => [spellImg(r.spell_a_id) + spellImg(r.spell_b_id), `${spellName(r.spell_a_id)} + ${spellName(r.spell_b_id)}`])}
+          ${buildRow("Start", top(mine(starters), 1)[0], (r) => starterSet(r.starter_items))}
+          ${buildRow("Boots", top(mine(boots), 1)[0], (r) => [itemImg(r.item_id), itemName(r.item_id)])}
+          ${[0, 1, 2].map((i) => buildRow(`${ordinal(i + 1)} item`, coreThree[i], (r) => [itemImg(r.item_id), itemName(r.item_id)])).join("")}
+          ${restRows.length ? `<div class="build-later"><span class="label">Then</span><div>${restRows.map((r) => `<span class="cd-chip" data-note="${pct(r.win_rate, 1)} win rate · ${pct(r.pick_share)} of games · usually ${ordinal(Math.round(r.avg_slot))} item">${itemImg(r.item_id)}<span>${pct(r.win_rate, 0)}</span></span>`).join("")}</div></div>` : ""}
+        </div>
+      </section>
+
+      <section>
+        <h2>Runes</h2>
+        ${runePages.length ? `<div class="rune-panel"><div class="rune-pages">${runePages.map((p, i) => `<${runePages.length > 1 ? `button aria-pressed="${i === 0}"` : "div"} class="rune-page" data-page="${i}">
+          <div class="icons">${perkImg(db.runes.get(p.keystone_id)?.icon_path, p.keystone_name, "lg")}
+            <div class="page-name"><strong>${esc(p.keystone_name)}</strong><small>${esc(p.primary_tree_name)} + ${esc(p.secondary_tree_name)}</small></div></div>
+          <div class="figure">${wr(p.win_rate)}<small>${pct(p.pick_share)} of games</small></div>
+        </${runePages.length > 1 ? "button" : "div"}>`).join("")}</div>
+        <div class="rune-slot">${board(runePages[0])}</div>
+        </div>`
+        : `<div class="panel"><div class="empty">No rune page has ${num(db.minGames)}+ games yet.</div></div>`}
+      </section>
     </div>
-    <p class="method sample">${sample}</p>
 
-    <section>
-      <h2>Playstyle</h2>
-      <div class="stats compare">${PLAYSTYLE.map(([key, label, digits]) => playstyleCard(stats, key, label, digits, role)).join("")}</div>
-    </section>
-
-    <section>
-      <h2>Runes</h2>
-      ${runePages.length ? `<div class="rune-panel"><div class="rune-pages">${runePages.map((p, i) => `<${runePages.length > 1 ? `button aria-pressed="${i === 0}"` : "div"} class="rune-page" data-page="${i}">
-        <div class="icons">${perkImg(db.runes.get(p.keystone_id)?.icon_path, p.keystone_name, "lg")}
-          ${perkImg(db.trees.get(p.secondary_tree_id)?.icon_path, p.secondary_tree_name, "sm")}
-          <div class="page-name"><strong>${esc(p.keystone_name)}</strong><small>${esc(p.primary_tree_name)} + ${esc(p.secondary_tree_name)}</small></div></div>
-        ${figure(p.pick_share, p.games)}<div class="figure">${wr(p.win_rate)}</div>
-      </${runePages.length > 1 ? "button" : "div"}>`).join("")}</div>
-      <div class="rune-slot">${board(runePages[0])}</div></div>`
-      : `<div class="panel"><div class="empty">No rune page has ${num(db.minGames)}+ games yet.</div></div>`}
-    </section>
-
-    <section>
-      <h2>Early game</h2>
-      <div class="stats early-game">
-        ${earlyCard("Summoner spells", top(mine(spells), 2), (r) => [spellImg(r.spell_a_id) + spellImg(r.spell_b_id), `${spellName(r.spell_a_id)} + ${spellName(r.spell_b_id)}`])}
-        ${earlyCard("Starter items", top(mine(starters), 2), (r) => starterSet(r.starter_items))}
-        ${earlyCard("Boots", top(mine(boots), 2), (r) => [itemImg(r.item_id), itemName(r.item_id)])}
-      </div>
-    </section>
-
-    <section>
-      <h2>Build</h2>
-      <h3 class="sub-head">Core items</h3>
-      <div class="stats core">${coreThree.map((r, i) => `<div class="stat core-card">
-          <div class="label">${ordinal(i + 1)} item</div>
-          <div class="core-item">${itemImg(r.item_id)}<strong>${itemName(r.item_id)}</strong></div>
-          <div class="vs">${pct(r.pick_share)} of games · ${wr(r.win_rate)} win rate</div>
-          ${i < coreThree.length - 1 ? '<span class="core-arrow" aria-hidden="true">&rarr;</span>' : ""}
-        </div>`).join("") || `<div class="stat"><div class="empty">No item has ${num(db.minGames)}+ games yet.</div></div>`}</div>
-      <h3 class="sub-head">After the core</h3>
-      <div class="panel tiles">${restRows.map((r) => `<div class="tile">${itemImg(r.item_id)}
-          <span class="name">${itemName(r.item_id)}<small>${pct(r.pick_share)} of games · usually ${ordinal(Math.round(r.avg_slot))}</small></span>
-        </div>`).join("") || '<div class="empty">No other item has been finished by 3+ players yet.</div>'}</div>
-      <p class="method">Players buy items through the game, and the expensive finished ones decide how a champion plays.
-        Core items are the three finished most often as a player's first, second or third item, shown in the order they're
-        usually bought. The percentage is how often each is among a player's first three. After the core lists the other
-        finished items: how often each is built across ${plural(timelineGames, "game")}, and when it usually arrives. These
-        have no win rate, because only longer games get that far, which would skew it.</p>
-    </section>
-
-    <section>
-      <h2>Matchups</h2>
-      <div class="grid-2">
-        ${optionPanel("Best against", bestVs, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent beaten more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
-        ${optionPanel("Worst against", worstVsRows, opponent, [shareColumn("Faced"), winMarginColumn], `No opponent lost to more than usual in ${MATCHUP_MIN_GAMES}+ games yet.`)}
-      </div>
-      <p class="method">How ${esc(champ.champion_name)} does against each opponent in the same role, compared with their usual
-        ${pct(stats.win_rate)} win rate as a ${ROLE_PLAYER[role]}. Faced is the share of games against that opponent.
-        Opponents need ${MATCHUP_MIN_GAMES}+ games, and are ranked as if each had ${MATCHUP_PRIOR} extra games at the usual
-        win rate, so a lucky 5–0 doesn't top the list. ± is the 95% margin of error.</p>
-    </section>
-
-    <section>
-      <h2>Skill order</h2>
-      ${skillOrder(champ, mine(skillPaths), abilitySpells)}
-      <p class="method">The skill path with the highest win rate among those with ${num(db.minGames)}+ games as a
-        ${ROLE_PLAYER[role]}. A path is the first three skills plus the order Q, W and E are maxed; the grid shows the skill
-        players on it most often take at each level. Only players who reached level 11 count, so the shortest games are
-        left out. ± is the 95% margin of error.</p>
-    </section>
-
-    <section>
-      <h2>Win rate by rank</h2>
-      ${rankChart(mine(ranks), stats.win_rate)}
-      <p class="method">${esc(champ.champion_name)}'s win rate as a ${ROLE_PLAYER[role]} at each rank, on a scale from
-        ${pct(RANK_SCALE[0], 0)} to ${pct(RANK_SCALE[1], 0)}. The dashed line is 50% and the light tick is their
-        ${pct(stats.win_rate)} across every rank. A game's rank is that of the player it was sampled from; matchmaking keeps
-        the other nine close to it. Master+ groups Master, Grandmaster and Challenger, which have few games on their own.
-        Pick rate is the share of that rank's games with ${esc(champ.champion_name)} in this role. Ranks need
-        ${num(db.minGames)}+ games, and ± is the 95% margin of error, so small gaps between ranks may be noise.</p>
-    </section>
+    <div class="cd-pair cd-pair-skill">
+      <section>
+        <h2>Skill order</h2>
+        ${skillOrder(champ, mine(skillPaths), abilitySpells)}
+      </section>
+    </div>
+    ${showcase ? showcase.html : ""}
   </div>`;
 
   const el = view.firstElementChild;
@@ -651,6 +707,30 @@ async function renderChampion(key, role, ticket) {
     el.querySelectorAll("button.rune-page").forEach((b) => b.setAttribute("aria-pressed", b === button));
     el.querySelector(".rune-slot").innerHTML = board(runePages[button.dataset.page]);
   });
+  if (showcase) {
+    const video = el.querySelector(".ability-video video");
+    const missing = el.querySelector(".ability-novideo");
+    const info = el.querySelector(".ability-info");
+    const pick = (i) => {
+      const a = showcase.list[i];
+      el.querySelectorAll(".ability-pick").forEach((b) => b.setAttribute("aria-selected", b.dataset.ability === String(i)));
+      info.innerHTML = `<h3><span>${a.label === "Passive" ? "Passive" : a.key}</span>${esc(a.name)}</h3>
+        ${a.cooldown ? `<p class="ability-cd">Cooldown ${esc(a.cooldown.replace(/\//g, " / "))}s</p>` : ""}
+        ${paragraphs(plainText(a.text), "ability-text")}`;
+      missing.hidden = true;
+      video.hidden = false;
+      video.src = a.video;
+      video.play().catch(() => {});
+    };
+    video.muted = true;  // the attribute alone doesn't always count as muted for autoplay
+    video.addEventListener("loadeddata", () => video.play().catch(() => {}));
+    video.addEventListener("error", () => { video.hidden = true; missing.hidden = false; });
+    el.querySelector(".ability-picks").addEventListener("click", (e) => {
+      const button = e.target.closest(".ability-pick");
+      if (button) pick(Number(button.dataset.ability));
+    });
+    pick(0);
+  }
   window.scrollTo({ top: 0 });
 }
 
@@ -1390,6 +1470,8 @@ window.addEventListener("hashchange", () => {
 });
 window.addEventListener("resize", () => current && moveIndicator(current.el));
 
+wireTips();
+
 // "/" jumps to the champion search, wherever the tier list is on screen.
 document.addEventListener("keydown", (e) => {
   const search = document.querySelector(".search input");
@@ -1411,19 +1493,14 @@ new ResizeObserver(onScroll).observe(document.body);
 // Background art in the side margins on wide screens (styles.css), one piece every 62rem down the page,
 // alternating sides, for as far as the page goes. Baron, Herald and the Elder Dragon come first so they
 // sit beside the opening cards on the insights page. Images load lazily as they scroll near.
+// [name, width / height, width in rem, where the face sits across the image (0 to 1), opacity, brightness].
+// Right-hand pieces hang off the content edge; left-hand ones are placed by the face, so the head
+// lands in the margin at any screen width.
 const BACKDROP_ART = [
-  ["baron", 643 / 1000, 30],
-  ["herald", 728 / 820, 32],
-  ["elder-dragon", 1100 / 654, 44, 0.6, 1.35],
-  ["ocean-drake", 1000 / 629, 40],
-  ["velkoz", 774 / 900, 30],
-  ["hextech-drake", 1100 / 495, 46],
-  ["kayle", 501 / 1000, 24],
-  ["cloud-drake", 1000 / 520, 42],
-  ["voidgrub", 476 / 700, 24],
-  ["chemtech-drake", 1000 / 753, 40],
-  ["braum", 560 / 900, 26],
-  ["mountain-drake", 800 / 707, 36],
+  ["baron", 643 / 1000, 30, 0.45], ["herald", 728 / 820, 32, 0.55], ["elder-dragon", 1100 / 654, 44, 0.45, 0.6, 1.35],
+  ["ocean-drake", 1000 / 629, 40, 0.25], ["velkoz", 774 / 900, 30, 0.5], ["hextech-drake", 1100 / 495, 46, 0.6],
+  ["kayle", 501 / 1000, 24, 0.5], ["cloud-drake", 1000 / 520, 42, 0.33], ["voidgrub", 476 / 700, 24, 0.6],
+  ["chemtech-drake", 1000 / 753, 40, 0.72], ["braum", 560 / 900, 26, 0.5], ["mountain-drake", 800 / 707, 36, 0.5],
 ];
 const backdrop = document.querySelector(".backdrop");
 const wideScreen = matchMedia("(min-width: 1100px)");
@@ -1433,13 +1510,15 @@ const placeBackdrop = () => {
   const slots = Math.max(1, Math.floor((document.body.scrollHeight / rem - 30) / 62) + 1);
   if (backdrop.childElementCount === slots) return;
   backdrop.replaceChildren(...Array.from({ length: slots }, (_, i) => {
-    const [name, ratio, width, opacity, brightness] = BACKDROP_ART[i % BACKDROP_ART.length];
+    const [name, ratio, width, face, opacity, brightness] = BACKDROP_ART[i % BACKDROP_ART.length];
     const img = Object.assign(new Image(), { src: `img/art-${name}.png`, alt: "", loading: "lazy", decoding: "async" });
     img.className = i % 2 ? "is-left" : "is-right";
     img.width = Math.round(width * rem);
     img.height = Math.round(width * rem / ratio);
     img.style.top = `${3 + i * 62}rem`;
     img.style.width = `${width}rem`;
+    img.style.setProperty("--art-width", `${width}rem`);
+    img.style.setProperty("--art-face", face);
     if (opacity) img.style.setProperty("--art-opacity", opacity);
     if (brightness) img.style.setProperty("--art-brightness", brightness);
     return img;
