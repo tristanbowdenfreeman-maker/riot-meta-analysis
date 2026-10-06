@@ -1194,63 +1194,31 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
 .tip-text b { color: var(--accent); font-weight: 700; }
 .item-tip-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 0.75rem; }
 
-/* Abilities: pick one on the left, its clip plays on the right. */
+/* Abilities: the clip on the left, the picker and the selected ability's details on the right. */
 .cd-abilities { margin-top: 2rem; }
-.ability-panel { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 24px; padding: 20px; }
-.ability-picks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
-.ability-pick {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--faint);
-  font: inherit;
-  font-size: 0.72rem;
-  line-height: 1.25;
-  text-align: center;
-  cursor: pointer;
-}
-.ability-pick img { width: 100%; max-width: 56px; height: auto; aspect-ratio: 1; border: 2px solid transparent; border-radius: 10px; opacity: 0.55; transition: opacity 0.2s var(--ease), border-color 0.2s var(--ease); }
-.ability-pick b {
-  position: absolute;
-  top: 38px;
-  left: 50%;
-  translate: 10px 0;
-  min-width: 18px;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--ink);
-  color: var(--text);
-  font-size: 0.65rem;
-  line-height: 18px;
-}
-.ability-pick:hover img { opacity: 0.85; }
-.ability-pick[aria-selected="true"] { color: var(--text); }
-.ability-pick[aria-selected="true"] img { border-color: var(--accent); opacity: 1; }
-.ability-side { display: flex; flex-direction: column; min-width: 0; }
-.ability-info { display: flex; flex: 1; flex-direction: column; gap: 14px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
-.ability-title { display: flex; align-items: center; gap: 14px; }
-.ability-title img { width: 52px; height: 52px; border: 2px solid var(--accent); border-radius: 10px; }
-.ability-kind { color: var(--accent); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-.ability-title h3 { margin: 2px 0 0; font: 1.7rem/1 var(--display); text-transform: uppercase; }
-.ability-facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
-.ability-facts > div { padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--pill); }
-.ability-facts dt { color: var(--faint); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-.ability-facts dd { margin: 3px 0 0; color: var(--text); font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.ability-body { padding-left: 14px; border-left: 2px solid var(--border); }
-.ability-text { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
-.ability-text + .ability-text { margin-top: 8px; }
-.ability-usage { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); }
-.ability-usage .label { display: block; margin-bottom: 8px; color: var(--faint); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-.ability-usage .ability-facts > div { border-color: rgba(239, 90, 50, 0.35); background: rgba(239, 90, 50, 0.08); }
-.ability-video { position: relative; align-self: center; overflow: hidden; aspect-ratio: 16 / 9; border: 1px solid var(--border); border-radius: 12px; background: #0e0f0c; }
+.ability-panel { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 28px; align-items: start; padding: 20px; }
+.ability-video { position: relative; overflow: hidden; aspect-ratio: 16 / 9; border-radius: 10px; background: #0e0f0c; }
 .ability-video video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .ability-novideo { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--faint); font-size: 0.85rem; }
 .ability-novideo[hidden] { display: none; }
+.ability-side { min-width: 0; }
+.ability-picks { display: flex; gap: 10px; }
+.ability-pick { position: relative; flex: 0 1 52px; padding: 0; border: 0; background: none; cursor: pointer; }
+.ability-pick img { display: block; width: 100%; height: auto; aspect-ratio: 1; border: 2px solid transparent; border-radius: 10px; filter: grayscale(0.6); opacity: 0.5; transition: opacity 0.2s var(--ease), filter 0.2s var(--ease), border-color 0.2s var(--ease); }
+.ability-pick b { position: absolute; right: -4px; bottom: -4px; min-width: 18px; padding: 0 4px; border-radius: 4px; background: var(--ink); color: var(--muted); font-size: 0.65rem; line-height: 18px; text-align: center; }
+.ability-pick:hover img { opacity: 0.85; filter: none; }
+.ability-pick[aria-selected="true"] img { border-color: var(--accent); filter: none; opacity: 1; }
+.ability-pick[aria-selected="true"] b { background: var(--accent); color: var(--ink); }
+.ability-info { margin-top: 22px; }
+.ability-kind { color: var(--accent); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+.ability-info h3 { margin: 4px 0 0; font: 1.9rem/1.05 var(--display); text-transform: uppercase; }
+.ability-facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 14px 0 0; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.ability-facts dt { color: var(--faint); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.ability-facts dd { margin: 3px 0 0; color: var(--text); font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ability-text { margin: 14px 0 0; color: var(--muted); font-size: 0.92rem; line-height: 1.65; }
+.ability-text + .ability-text { margin-top: 8px; }
 @media (max-width: 1000px) {
-  .ability-panel { grid-template-columns: 1fr; }
+  .ability-panel { grid-template-columns: 1fr; gap: 20px; }
+}
   .ability-video { order: -1; }
 }
