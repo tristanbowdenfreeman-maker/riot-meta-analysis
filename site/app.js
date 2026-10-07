@@ -1,4 +1,4 @@
-// League of Legends Statistics: reads the JSON exported from the SQL Server mart views (site/data) and renders
+// Player Behaviour Analysis: reads the JSON exported from the SQL Server mart views (site/data) and renders
 // three pages: the insights (#/ or #/insights), the tier list (#/tiers or #/role/TOP) and a champion
 // page (#/champion/Gangplank/TOP). Insights opens first: it's the analysis the project exists for.
 
@@ -1225,8 +1225,8 @@ async function renderInsights(ticket) {
     <div class="hero hero--split">
       <div>
         <h1>Key<br>findings</h1>
-        <p>I love using data to make informed decisions, so as a League of Legends player I built this dashboard to
-          test my data and software skills and help me make better decisions in my own games. Python pulls ranked games
+        <p>I built this dashboard while I was playing League of Legends, to test my data and software skills and to
+          make better decisions in my own games. I don't play anymore, but I still enjoy maintaining it. Python pulls ranked games
           (Emerald+ solo/duo, EUW) from the Riot Games API and SQL Server models them. Every figure below comes from a
           T-SQL view that has to pass its data checks before it's published. So far that's ${num(db.matches)} games
           from patch ${esc(patchName(db.patch))}.</p>

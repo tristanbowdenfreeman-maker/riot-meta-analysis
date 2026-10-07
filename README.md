@@ -1,4 +1,4 @@
-# League of Legends Statistics
+# Player Behaviour Analysis
 
 Champion, item, rune and summoner spell stats for League of Legends, built from the Riot Games
 API. Emerald+ ranked solo/duo on EUW, one patch at a time.
