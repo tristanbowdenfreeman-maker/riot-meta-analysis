@@ -74,9 +74,11 @@ async function init() {
     version: meta.ddragon_version,
     patch: patch.patch,
     matches: patch.matches,
-    // Build, rune and matchup options need 1 game per 300 matches in the sample (at least 10),
-    // so nothing on the site rests on a handful of games: 10 at 3,000 matches, 100 at 30,000.
-    minGames: Math.max(10, Math.round(patch.matches / 300)),
+    // Build, rune and matchup options need 1 game per 300 matches in the sample, between 10 and 150,
+    // so nothing rests on a handful of games: 10 at 3,000 matches, 100 at 30,000. Past 45,000 it
+    // stays at 150, where the margin of error on a win rate is about ±8 points, so a bigger sample
+    // shows more champions' builds instead of raising the bar.
+    minGames: Math.min(150, Math.max(10, Math.round(patch.matches / 300))),
     tiers: tiers.filter((t) => t.patch === patch.patch),
     volume: volumes.find((v) => v.patch === patch.patch),
     avgMinutes: patch.avg_duration_min,

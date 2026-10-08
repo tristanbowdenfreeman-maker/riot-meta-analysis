@@ -80,6 +80,12 @@ def test_client_sends_key_and_routes_to_correct_hosts():
     assert session.calls[1][1] == {"queue": 420, "type": "ranked", "startTime": 1700000000, "count": 5}
 
 
+def test_match_ids_stops_at_end_time_when_given():
+    client, session, _ = make_client([FakeResponse(200, '["EUW1_1"]')])
+    client.match_ids("abc", 1700000000, 20, end_time=1700100000)
+    assert session.calls[0][1] == {"queue": 420, "type": "ranked", "startTime": 1700000000, "count": 20, "endTime": 1700100000}
+
+
 def test_client_fetches_timeline_from_region_host():
     client, session, _ = make_client([FakeResponse(200, '{"info": {"frames": []}}')])
     assert client.match_timeline_json("EUW1_1") == '{"info": {"frames": []}}'

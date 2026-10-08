@@ -154,9 +154,11 @@ def test_support_starter_sets_include_world_atlas():
             assert "3865:1" in row["starter_items"].split(","), row
 
 
-def test_data_dragon_version_matches_the_patch():
+def test_data_dragon_version_is_not_older_than_the_patch():
+    # Usually the same patch, but with HOLD_PATCH set the names and icons can be from a newer one.
     (patch,) = load("patch_summary")
-    assert load("meta")["ddragon_version"].startswith(patch["patch"] + ".")
+    ddragon = load("meta")["ddragon_version"].split(".")[:2]
+    assert tuple(map(int, ddragon)) >= tuple(map(int, patch["patch"].split(".")))
 
 
 def test_core_item_shares_add_up_to_at_most_three():

@@ -46,7 +46,9 @@ def cmd_patch(settings, args):
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM etl.patch WHERE patch = %s", (patch,))
         is_new = cursor.fetchone() is None
-    if is_new:
+    if is_new and settings.hold_patch:
+        print(f"Data Dragon has patch {patch}, but collection is held on {settings.hold_patch} (HOLD_PATCH in .env)")
+    elif is_new:
         ddragon.load(settings, version)  # names and icons of any new champions and items
         with connect(settings) as conn:
             cursor = conn.cursor()
@@ -69,15 +71,16 @@ def cmd_patch(settings, args):
 
 def cmd_queue(settings, args):
     with connect(settings) as conn:
+        until = None
         if args.since:
             since = int(datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
             more = args.more
         else:
             # No date given: queue games of the patch being collected, up to its cap.
-            plan = pipeline.collection_plan(conn)
+            plan = pipeline.collection_plan(conn, settings.hold_patch)
             if plan is None:
                 raise SystemExit("No patch set up yet: run `python -m riot_meta patch` first, or pass --since")
-            patch, since, matches, in_progress = plan
+            patch, since, until, matches, in_progress = plan
             if matches >= settings.matches_per_patch:
                 print(f"  patch {patch} is full ({matches:,} matches): nothing to queue")
                 return
@@ -87,7 +90,7 @@ def cmd_queue(settings, args):
                 return
             more = needed if args.more is None else min(args.more, needed)
         pipeline.queue_matches(
-            _client(settings), conn, args.target, since, args.per_player, args.seed, settings.platform, more
+            _client(settings), conn, args.target, since, args.per_player, args.seed, settings.platform, more, until
         )
 
 

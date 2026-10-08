@@ -55,10 +55,11 @@ def discover(client: RiotClient, conn, pages_per_division: int) -> int:
 
 def queue_matches(
     client: RiotClient, conn, target: int | None, since_epoch: int, per_player: int, seed: int, platform: str,
-    more: int | None = None,
+    more: int | None = None, until_epoch: int | None = None,
 ) -> int:
     """Visit players in a seeded random order, queueing up to `per_player` of their ranked matches
-    played since `since_epoch`, until the queue holds `target` matches (or `more` than it holds now).
+    played since `since_epoch` (and before `until_epoch`, if given), until the queue holds `target`
+    matches (or `more` than it holds now).
 
     A player's history covers every server in the region (EUW, EUNE, TR, RU), so only match IDs
     from `platform` (e.g. EUW1_...) are queued."""
@@ -76,7 +77,7 @@ def queue_matches(
     for visited, (puuid, tier) in enumerate(players, start=1):
         if queued >= target:
             break
-        for match_id in client.match_ids(puuid, since_epoch, per_player):
+        for match_id in client.match_ids(puuid, since_epoch, per_player, end_time=until_epoch):
             if not match_id.startswith(prefix):
                 continue
             cursor.execute(
@@ -103,23 +104,28 @@ def patch_of(version: str) -> str:
     return ".".join(version.split(".")[:2])
 
 
-def collection_plan(conn) -> tuple[str, int, int, int] | None:
-    """The patch to collect (the newest in etl.patch), the time its games start (epoch seconds),
-    its matches loaded so far, and matches on their way (queued, or downloaded but not loaded).
+def collection_plan(conn, hold_patch: str | None = None) -> tuple[str, int, int | None, int, int] | None:
+    """The patch to collect (`hold_patch`, or else the newest in etl.patch), the time its games
+    start and end (epoch seconds: the next patch's start, or None while it's the newest), its
+    matches loaded so far, and matches on their way (queued, or downloaded but not loaded).
     None if no patch is set up."""
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT TOP 1 patch, DATEDIFF_BIG(SECOND, '1970-01-01', started_utc), matches
-        FROM etl.v_patch_progress
-        WHERE status <> 'retired'
-        ORDER BY started_utc DESC
-        """
+        SELECT TOP 1 p.patch, DATEDIFF_BIG(SECOND, '1970-01-01', p.started_utc),
+               (SELECT DATEDIFF_BIG(SECOND, '1970-01-01', MIN(n.started_utc))
+                FROM etl.patch AS n WHERE n.started_utc > p.started_utc),
+               p.matches
+        FROM etl.v_patch_progress AS p
+        WHERE p.status <> 'retired' AND (%s IS NULL OR p.patch = %s)
+        ORDER BY p.started_utc DESC
+        """,
+        (hold_patch, hold_patch),
     )
     row = cursor.fetchone()
     if row is None:
         return None
-    patch, since_epoch, matches = row
+    patch, since_epoch, until_epoch, matches = row
     # Matches already on their way: queued but not downloaded, or downloaded but not loaded yet.
     cursor.execute(
         """
@@ -129,7 +135,7 @@ def collection_plan(conn) -> tuple[str, int, int, int] | None:
         """
     )
     in_progress = cursor.fetchone()[0]
-    return patch, int(since_epoch), matches, in_progress
+    return patch, int(since_epoch), None if until_epoch is None else int(until_epoch), matches, in_progress
 
 
 def _compress(text: str) -> bytes:

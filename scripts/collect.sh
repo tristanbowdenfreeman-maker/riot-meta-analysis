@@ -34,6 +34,7 @@ cd "$(dirname "$0")/.."
 
 STEP=${STEP:-1000}
 PAGES=${PAGES:-2}            # ladder pages per division already discovered
+PER_PLAYER=${PER_PLAYER:-20} # newest matches taken from each player per visit
 MAX_PER_HOUR=${MAX_PER_HOUR:-1500}  # matches an hour at most
 EXPORT_EVERY=${EXPORT_EVERY:-60}    # minutes between site exports at least
 MAX_LOAD=${MAX_LOAD:-6}             # pause above this 5-minute load average (8 cores)
@@ -101,7 +102,7 @@ while true; do
   ROUND_START=$(date +%s)
   run patch || { wait_after_failure; continue; }
   stamp "Queueing up to $STEP more matches"
-  run queue --more "$STEP" || { wait_after_failure; continue; }
+  run queue --more "$STEP" --per-player "$PER_PLAYER" || { wait_after_failure; continue; }
   if grep -q "is full" "$LOG"; then
     stamp "This patch has its full sample. Checking for a new patch again in an hour."
     sleep 3600

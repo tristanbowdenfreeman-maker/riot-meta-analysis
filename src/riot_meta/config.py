@@ -22,6 +22,7 @@ class Settings:
     mssql_database: str
     matches_per_patch: int
     matches_to_go_live: int
+    hold_patch: str | None
 
 
 def parse_rate_limits(spec: str) -> list[tuple[int, float]]:
@@ -53,4 +54,6 @@ def load_settings() -> Settings:
         # growing up to MATCHES_PER_PATCH. Never more than the cap.
         matches_to_go_live=min(int(os.getenv("MATCHES_TO_GO_LIVE", "30000")),
                                int(os.getenv("MATCHES_PER_PATCH", "30000"))),
+        # Keep collecting this patch (e.g. "16.19") and don't start new ones; unset to follow new patches.
+        hold_patch=os.getenv("HOLD_PATCH") or None,
     )

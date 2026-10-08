@@ -109,13 +109,15 @@ class RiotClient:
         )
         return response.json() if response else []
 
-    def match_ids(self, puuid: str, start_time: int, count: int, queue: int = 420) -> list[str]:
-        """match-v5: a player's most recent match IDs since start_time (epoch seconds), newest first."""
-        response = self._get(
-            self._region_host,
-            f"/lol/match/v5/matches/by-puuid/{puuid}/ids",
-            {"queue": queue, "type": "ranked", "startTime": start_time, "count": count},
-        )
+    def match_ids(
+        self, puuid: str, start_time: int, count: int, queue: int = 420, end_time: int | None = None
+    ) -> list[str]:
+        """match-v5: a player's most recent match IDs since start_time (epoch seconds), newest first,
+        and before end_time if given."""
+        params = {"queue": queue, "type": "ranked", "startTime": start_time, "count": count}
+        if end_time is not None:
+            params["endTime"] = end_time
+        response = self._get(self._region_host, f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params)
         return response.json() if response else []
 
     def match_json(self, match_id: str) -> str | None:
