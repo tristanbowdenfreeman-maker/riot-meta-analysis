@@ -1031,9 +1031,10 @@ async function renderInsights(ticket) {
   const firstBlood = firstOf("champion");
   // Inhibitors and Baron winning most is no surprise, so the headline compares the early objectives.
   const [herald, firstDragon, firstTower, grubs] = ["riftHerald", "dragon", "tower", "horde"].map(firstOf);
-  const objectiveTitle = herald && firstDragon && herald.win_rate > firstDragon.win_rate
-    ? `Teams that take Rift Herald win ${pct(herald.win_rate, 0)} of games`
-    : firstBlood ? `First blood wins only ${pct(firstBlood.win_rate, 0)}` : `${objectiveName(topObjective?.objective)} wins ${pct(topObjective?.win_rate, 0)}`;
+  const [bestEarly] = [firstTower, herald, firstDragon, grubs].filter(Boolean).sort((a, b) => b.win_rate - a.win_rate);
+  const objectiveFinding = bestEarly
+    ? `Teams that took ${esc(inSentence(objectiveName(bestEarly.objective)))} won ${pct(bestEarly.win_rate, 0)}, the most of any early objective.`
+    : "";
   const early = [firstTower, herald, firstDragon, grubs].filter(Boolean)
     .map((o, i) => `${esc(inSentence(objectiveName(o.objective)))} ${i ? "" : "won "}${pct(o.win_rate, 0)}${i ? "" : " of games"}`);
   const late = ["inhibitor", "baron"].map(firstOf).filter(Boolean);
@@ -1079,9 +1080,10 @@ async function renderInsights(ticket) {
   const bandsAt = () => leadRows.filter((r) => r.minute === minute).sort((a, b) => a.band_min - b.band_min);
   const lanesAt = () => ROLES.slice(1).map(([role]) => laneRows.find((r) => r.minute === minute && r.role === role)).filter(Boolean);
   const bandFrom = (min) => bandsAt().find((b) => b.band_min === min);
-  const leadTitle = () => {
+  const leadTitle = () => `Win rate by gold lead at ${minute} min`;
+  const leadFinding = () => {
     const b = bandFrom(2000);
-    return b ? `A 2k lead at ${minute} minutes wins ${pct(b.win_rate, 0)}` : `Gold leads at ${minute} minutes`;
+    return b ? `Teams ${leadBand(b)} gold ahead won ${pct(b.win_rate, 0)}.` : "";
   };
   const leadLede = () => {
     const bands = bandsAt(), lanes = [...lanesAt()].sort((a, b) => a.win_rate - b.win_rate);
@@ -1224,7 +1226,7 @@ async function renderInsights(ticket) {
   view.innerHTML = `<div class="page insights">
     <div class="hero hero--split">
       <div>
-        <h1>Key<br>findings</h1>
+        <h1>Ranked match<br>analysis</h1>
         <p>I built this dashboard while I was playing League of Legends, to test my data and software skills and to
           make better decisions in my own games. I don't play anymore, but I still enjoy maintaining it. Python pulls ranked games
           (Emerald+ solo/duo, EUW) from the Riot Games API and SQL Server models them. Every figure below comes from a
@@ -1244,7 +1246,8 @@ async function renderInsights(ticket) {
     ${topObjective ? `<section class="card reveal" id="objectives">
       <div class="card-head">
         <div>
-          <h2>${esc(objectiveTitle)}</h2>
+          <h2>Win rate by first objective</h2>
+          ${objectiveFinding ? `<p class="finding">${objectiveFinding}</p>` : ""}
           <p class="lede">${early.length ? `I wanted to know which early objective is worth the most. The team that took ${early.slice(0, -1).join(", ")}${early.length > 1 ? " and " : ""}${early.at(-1)}.` : ""}${heraldLine ? `
             ${heraldLine}` : ""}${firstBlood ? `
             First blood, the first kill of the game, mattered less than I expected at ${pct(firstBlood.win_rate, 0)}.` : ""}${late.length ? `
@@ -1266,7 +1269,8 @@ async function renderInsights(ticket) {
     ${lateTop && earlyTop ? `<section class="card reveal" id="length">
       <div class="card-head">
         <div>
-          <h2>Scaling champions at a glance</h2>
+          <h2>Win rate by game length</h2>
+          <p class="finding">${esc(lateTop.champion_name)} won ${pct(lateTop.short_win_rate, 0)} of short games and ${pct(lateTop.long_win_rate, 0)} of long ones.</p>
           <p class="lede">Some champions get stronger the longer a game goes, which players call scaling.
             ${esc(lateTop.champion_name)} won ${pct(lateTop.short_win_rate, 0)} of games that ended within 25 minutes and
             ${pct(lateTop.long_win_rate, 0)} of games that went past 33. ${esc(earlyTop.champion_name)} went the other way,
@@ -1295,6 +1299,7 @@ async function renderInsights(ticket) {
       <div class="card-head">
         <div>
           <h2 class="lead-title">${esc(leadTitle())}</h2>
+          <p class="finding lead-finding">${leadFinding()}</p>
           <p class="lede lead-lede">${leadLede()}</p>
         </div>
         ${slicer(minutes.map((m) => [String(m), `${m} min`]), String(minute), "Minute")}
@@ -1315,7 +1320,8 @@ async function renderInsights(ticket) {
     <section class="card reveal" id="gaps">
       <div class="card-head">
         <div>
-          <h2>Fights, not farm, separate winners</h2>
+          <h2>Winners vs losers: <span class="gap-role">${ROLE_PLAYER[gapRole]}s</span></h2>
+          <p class="finding">Winners died ${range("Deaths")} less than losers. The farm gap was only ${farmRange}.</p>
           <p class="lede">Against the losing player in the same role, winners farmed (killed minions and monsters for
             gold) only ${farmRange} more per minute.${supportFarm < 0
             ? ` Winning supports farmed ${Math.round(-supportFarm * 100)}% less, since they leave the minions to their bot laner.` : ""}
@@ -1333,7 +1339,10 @@ async function renderInsights(ticket) {
     <section class="card reveal" id="bans">
       <div class="card-head">
         <div>
-          <h2>Bans don't predict wins</h2>
+          <h2>Win rate by ban rate</h2>
+          <p class="finding">${Math.abs(topBand.win_rate - bands.at(-1).win_rate) < 0.02
+            ? "The most banned champions don't win more often."
+            : `Champions banned in 10%+ of games won ${pct(topBand.win_rate)}, against ${pct(bands.at(-1).win_rate)} for the rarely banned.`}</p>
           <p class="lede">The ${num(topBand.champions)} champions banned in 10%+ of games won ${pct(topBand.win_rate)}
             of the games they weren't banned in, compared with ${pct(bands.at(-1).win_rate)} for the ${num(bands.at(-1).champions)}
             banned in under 3%. That's only ${(Math.abs(topBand.win_rate - bands.at(-1).win_rate) * 100).toFixed(1)} points for a
@@ -1356,7 +1365,10 @@ async function renderInsights(ticket) {
     <section class="card reveal" id="samples">
       <div class="card-head">
         <div>
-          <h2>Small samples mislead</h2>
+          <h2>Raw vs adjusted win rate</h2>
+          <p class="finding">${luckiest === leader
+            ? `${esc(leader.champion_name)} has the highest win rate, over enough games for it to hold up.`
+            : `${esc(luckiest.champion_name)}'s ${pct(luckiest.win_rate)} came from only ${num(luckiest.games)} games. Once that's adjusted for, ${esc(leader.champion_name)} ranks first.`}</p>
           <p class="lede">${luckiest === leader
             ? `${esc(leader.champion_name)} has the highest win rate, ${pct(leader.win_rate)} over ${num(leader.games)} games,
               which is enough games for it to hold up. To stop a short lucky run from topping the tier list, I add
@@ -1380,7 +1392,8 @@ async function renderInsights(ticket) {
 
     <div class="grid-2">
       <section class="card reveal">
-        <h2>${redAhead ? "Red" : "Blue"} side wins ${pct(Math.max(red.win_rate, blue.win_rate))}</h2>
+        <h2>Win rate by side</h2>
+        <p class="finding">${redAhead ? "Red" : "Blue"} side won ${pct(Math.max(red.win_rate, blue.win_rate))}, slightly more than ${redAhead ? "blue" : "red"}.</p>
         <div class="split" data-tip="${esc(`Blue ${num(blue.wins)} wins, red ${num(red.wins)}\nOut of ${num(red.games)} games`)}">
           <span class="split-blue" style="--w: ${blue.win_rate}"><strong>${pct(blue.win_rate)}</strong>Blue</span>
           <span class="split-red" style="--w: ${red.win_rate}"><strong>${pct(red.win_rate)}</strong>Red</span>
@@ -1393,7 +1406,7 @@ async function renderInsights(ticket) {
       </section>
 
       <section class="card reveal">
-        <h2>Sample by rank</h2>
+        <h2>Games by rank</h2>
         <div class="bars ranks">${ranks.map((r) => `<div class="bar-row" tabindex="0" data-tip="${esc(`${RANK_NAME[r.sample_tier] ?? r.sample_tier}\n${num(r.matches)} matches`)}">
           <span class="bar-label"><img class="rank-icon" src="img/rank-${r.sample_tier.toLowerCase()}.png" alt="" width="28" height="28">${RANK_NAME[r.sample_tier] ?? esc(r.sample_tier)}</span>
           <span class="bar-track"><span class="bar rank-${r.sample_tier.toLowerCase()}" style="--w: ${(r.share_of_matches / rankScale).toFixed(4)}"></span></span>
@@ -1409,7 +1422,7 @@ async function renderInsights(ticket) {
     <section class="card reveal flow-card">
       <div class="card-head">
         <div>
-          <h2>From API to dashboard</h2>
+          <h2>How it's built</h2>
           <p class="lede">I collect the games with Python and model them in SQL Server, and every figure on this site comes from a T-SQL view.</p>
         </div>
       </div>
@@ -1469,6 +1482,7 @@ async function renderInsights(ticket) {
   if (leadCard) wireSlicer(leadCard.querySelector(".slicer"), (value) => {
     minute = Number(value);
     morph(leadCard.querySelector(".lead-title"), esc(leadTitle()));
+    morph(leadCard.querySelector(".lead-finding"), leadFinding());
     morph(leadCard.querySelector(".lead-lede"), leadLede());
     morph(leadCard.querySelector(".lead-columns"), leadColumns());
     morph(leadCard.querySelector(".lane-bars"), laneBars());
@@ -1476,7 +1490,11 @@ async function renderInsights(ticket) {
   });
 
   const gapCard = el.querySelector("#gaps");
-  wireSlicer(gapCard.querySelector(".slicer"), (role) => { gapRole = role; updateGaps(gapCard); });
+  wireSlicer(gapCard.querySelector(".slicer"), (role) => {
+    gapRole = role;
+    gapCard.querySelector(".gap-role").textContent = `${ROLE_PLAYER[role]}s`;
+    updateGaps(gapCard);
+  });
   const samples = el.querySelector("#samples");
   wireSlicer(samples.querySelector(".slicer"), (value) => { rankBy = value; reorder(samples.querySelector(".dumbbells"), dumbbells()); });
   const banCard = el.querySelector("#bans");

@@ -578,6 +578,7 @@ td .moe { margin-left: 6px; color: var(--faint); font-size: 0.8rem; }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem 2rem; flex-wrap: wrap; margin: 0 0 1.5rem; }
 .card-head > div:first-child { flex: 1 1 28rem; }
 .card-head .lede { margin: 0; }
+.finding { max-width: 44rem; margin: -0.25rem 0 0.75rem; color: var(--text); font-size: clamp(1.1rem, 1.6vw, 1.3rem); font-weight: 600; line-height: 1.35; }
 .card .method { margin-top: 1.25rem; }
 .slicer { flex: none; margin: 0; background: var(--bg); }
 
