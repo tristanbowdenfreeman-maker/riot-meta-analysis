@@ -1,4 +1,4 @@
-# Secrets — never commit
+# Secrets, never commit
 .env
 
 # Python
@@ -16,4 +16,3 @@ __pycache__/
 
 # Background collection log
 *.log
-.claude/

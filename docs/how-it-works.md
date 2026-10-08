@@ -9,10 +9,11 @@ The definitions behind the numbers, and why I built it the way I did.
 | Server | EUW |
 | Queue | Ranked solo/duo only (queue 420) |
 | Ranks | Emerald and above ("Emerald+") |
-| Patch | One at a time, 30,000 matches each |
+| Patch | One at a time. It goes live at 30,000 matches and keeps growing up to a cap |
 
-Players are found on the ranked ladder, visited in a random (seeded) order, and at most five
-matches are taken from each, so no single player dominates the sample.
+Players are found on the ranked ladder and visited in a random (seeded) order. Only a set number
+of matches is taken from each player per visit (`--per-player`, 20 in `scripts/collect.sh`), so no
+single player dominates the sample.
 
 ## Why SQL Server, and why the JSON is parsed in T-SQL
 
@@ -27,22 +28,23 @@ raw JSON means I can change the model and rebuild it without calling the API aga
 Every load is incremental: a procedure only picks up matches that aren't in its table yet, in
 batches that commit one at a time.
 
-## One patch at a time, 30,000 matches each
+## One patch at a time
 
 `etl.patch` tracks which patch the site shows (`live`) and which is being filled (`collecting`).
 
 1. Each round, `python -m riot_meta patch` checks Data Dragon for a new patch. A new one is added
    as `collecting` (`etl.usp_start_patch`), and only games played since then are queued.
-2. The collector queues games until the patch has 30,000 valid matches (`etl.v_patch_progress`),
-   then stops and checks for a new patch every hour.
+2. The collector queues games until the patch has `MATCHES_PER_PATCH` valid matches
+   (`etl.v_patch_progress`), then stops and checks for a new patch every hour. `HOLD_PATCH` keeps
+   it on one patch instead, taking only games played before the next patch started.
 3. The site keeps showing the old patch: `mart.v_valid_match` only lets the live patch through, so
    every view ignores the new one until it's ready.
-4. Once the new patch reaches 30,000, `etl.usp_promote_patch` makes it live and
+4. Once the new patch reaches 30,000 (`MATCHES_TO_GO_LIVE`), `etl.usp_promote_patch` makes it live and
    `etl.usp_delete_retired_patches` deletes the old patch's raw JSON and fact rows, 1,000 matches
    per transaction.
 
-So the database never holds more than two patches, about 6 GB each at most, and the site never
-shows a patch on a handful of games. If another patch comes out before the new one is full, the
+So the database never holds more than two patches, and the site never shows a patch on a handful
+of games. If another patch comes out before the new one is full, the
 unfinished one is dropped and collection moves on.
 
 ## Running on a laptop
@@ -114,7 +116,8 @@ extra games at 50%.
 4. `prior_games = 0.25 / real variance`.
 
 At 3,000 matches this came to about 255 games, so the 38–18 record counts as 53.2% while the
-211–153 record only falls to 54.7%. As the sample grows the prior shrinks by itself.
+211–153 record only falls to 54.7%. It's worked out again on every export, and the site shows the
+current value.
 
 Tiers are cut by rank within each role (OP = top 5%, then 1 to 5). A champion needs a 1%+ pick
 rate in the role, and the role must be 10%+ of its games, to get a tier.
@@ -130,8 +133,8 @@ by `(wins + 10 × the champion's overall win rate) / (games + 10)`.
 - **Gold leads**: the leading team's win rate at 10, 15, 20 and 25 minutes, by size of lead; and
   when one laner is 1,000+ gold ahead of their opponent.
 
-These show what winning looks like, not what causes it: the better team takes objectives, kills
-and gold as well as the win.
+These show what winning teams have in common. They don't prove what causes the win, because the
+better team tends to get the objectives, kills and gold as well.
 
 ## Data checks
 
