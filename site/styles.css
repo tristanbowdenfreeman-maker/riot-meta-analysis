@@ -543,17 +543,6 @@ td .moe { margin-left: 6px; color: var(--faint); font-size: 0.8rem; }
 .kpi-triangle .kpi:last-child { border-left: 1px solid var(--border); }
 
 /* The other figures share one box, divided by thin rules. */
-.kpi-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0 0 clamp(2.5rem, 5vw, 4rem);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-}
-.kpi-strip .kpi { padding: 22px 24px; }
-.kpi-strip .kpi + .kpi { border-left: 1px solid var(--border); }
 
 .reveal .kpi { opacity: 0; transform: translateY(1rem); transition: opacity 0.7s ease, transform 0.9s var(--ease); transition-delay: calc(var(--i, 0) * 80ms); }
 .reveal.is-visible .kpi { opacity: 1; transform: none; }
@@ -876,7 +865,7 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--accent), rgba(239, 90, 50, 0.12));
+  background: var(--accent);
   transform: scaleX(0);
   transform-origin: left;
   transition: transform 1.6s var(--ease) 0.2s;
@@ -891,7 +880,6 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   height: 14px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 5px var(--surface), 0 0 0 6px rgba(239, 90, 50, 0.35);
   transform: scale(0);
   transition: transform 0.6s var(--ease);
   transition-delay: calc(0.2s + var(--i) * 0.15s);
@@ -907,12 +895,8 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
 .checks { padding: 1.25rem 0 0; font-size: 0.95rem; border-top: 1px solid var(--border); }
 .checks summary { display: flex; align-items: center; gap: 12px; width: fit-content; cursor: pointer; color: var(--text); font-weight: 700; list-style: none; }
 .checks summary::-webkit-details-marker { display: none; }
-.checks summary::after { content: "→"; color: var(--accent); transition: transform 0.4s var(--ease); }
-.checks summary:hover::after { transform: translateX(4px); }
-.checks[open] summary::after { transform: rotate(90deg); }
-.pulse { position: relative; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-.pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: pulse 2s ease-out infinite; }
-@keyframes pulse { from { transform: scale(1); opacity: 0.7; } to { transform: scale(3); opacity: 0; } }
+.checks summary .label { text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 4px; }
+.checks summary:hover .label { text-decoration-color: currentColor; }
 .checks ul { margin: 12px 0 0; padding: 0; list-style: none; columns: 2 320px; column-gap: 24px; }
 .checks li { margin: 0 0 6px; color: var(--muted); break-inside: avoid; }
 .checks .bad { color: var(--bad); }
@@ -973,11 +957,7 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   .kpi-triangle { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi-triangle .kpi { padding: 0 0.5rem; }
   .kpi-triangle .apex .value { font-size: 2.8rem; }
-  .kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kpi-strip .kpi { padding: 16px; }
-  .kpi-strip .kpi:nth-child(3) { border-left: 0; }
-  .kpi-strip .kpi:nth-child(n + 3) { border-top: 1px solid var(--border); }
-  .search { flex: 1 1 100%; }
+          .search { flex: 1 1 100%; }
   .search kbd { display: none; }
   .stats.core { grid-template-columns: 1fr; gap: 10px; }
   .bar-row, .ranks .bar-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
@@ -1003,7 +983,7 @@ div.column:hover, div.column:focus-visible { background: var(--surface-hover); o
   .ban-grid, .insight-grid { grid-template-columns: 1fr; }
   /* The pipeline runs down the left edge instead of across. */
   .flow { grid-template-columns: 1fr; gap: 28px; padding: 0 0 0 2.25rem; }
-  .flow::before { top: 0; bottom: 0; left: 6px; right: auto; width: 2px; height: auto; background: linear-gradient(180deg, var(--accent), rgba(239, 90, 50, 0.12)); transform: scaleY(0); transform-origin: top; }
+  .flow::before { top: 0; bottom: 0; left: 6px; right: auto; width: 2px; height: auto; background: var(--accent); transform: scaleY(0); transform-origin: top; }
   .reveal.is-visible .flow::before { transform: scaleY(1); }
   .flow li::before { top: 4px; left: -2.25rem; }
 }

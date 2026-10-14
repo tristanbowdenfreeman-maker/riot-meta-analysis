@@ -822,7 +822,6 @@ const METRIC_LABEL = {
   "Deaths": "Deaths", "Kills + assists": "Kills + assists", "CS / min": "Farm per minute",
   "Damage / min": "Damage per minute", "Vision / min": "Vision per minute", "First item (min)": "Time to first item",
 };
-const dateName = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 const statValue = (v) => (v >= 100 ? num(Math.round(v)) : v.toFixed(v >= 10 ? 1 : 2));
 
 // ---------- Dashboard pieces ----------
@@ -1038,15 +1037,14 @@ async function renderInsights(ticket) {
     ? `Teams that took ${esc(inSentence(objectiveName(bestEarly.objective)))} won ${pct(bestEarly.win_rate, 0)}, the most of any early objective.`
     : "";
   const early = [firstTower, herald, firstDragon, grubs].filter(Boolean)
-    .map((o, i) => `${esc(inSentence(objectiveName(o.objective)))} ${i ? "" : "won "}${pct(o.win_rate, 0)}${i ? "" : " of games"}`);
+    .map((o, i) => `${esc(inSentence(objectiveName(o.objective)))} ${i ? "" : "won "}${pct(o.win_rate, 0)}`);
   const late = ["inhibitor", "baron"].map(firstOf).filter(Boolean);
   // Herald against first dragon: the gap in points, and whether it is bigger than both margins of error together.
   const heraldGap = herald && firstDragon ? (herald.win_rate - firstDragon.win_rate) * 100 : 0;
   const heraldMargin = herald && firstDragon ? Math.hypot(herald.win_rate_moe, firstDragon.win_rate_moe) * 100 : 0;
   const heraldLine = heraldGap > 0
-    ? `Herald came out ${heraldGap.toFixed(1)} points ahead of first dragon, which is ${heraldGap > heraldMargin
-      ? `well outside the ±${heraldMargin.toFixed(1)}-point margin of error` : `inside the ±${heraldMargin.toFixed(1)}-point margin of error, so it could still be chance`},
-      even though a team only takes it in ${pct(herald.taken_share, 0)} of games.`
+    ? `Herald beat dragon by ${heraldGap.toFixed(1)} points, ${heraldGap > heraldMargin
+      ? `well outside the ±${heraldMargin.toFixed(1)}-point margin of error.` : `but that's inside the ±${heraldMargin.toFixed(1)}-point margin of error, so it could still be chance.`}`
     : "";
 
   // Game length: which champions win short games and which win long ones. Each row is a
@@ -1092,10 +1090,11 @@ async function renderInsights(ticket) {
     const [small] = bands, big = bands.at(-1), mid = bandFrom(1000);
     if (!small || !mid || lanes.length < 2) return "";
     const [worst, ...others] = lanes;
-    return `Small leads don't count for much. Teams less than 1k gold ahead at ${minute} minutes won ${pct(small.win_rate, 0)},
-      rising to ${pct(mid.win_rate, 0)} at 1–2k and ${pct(big.win_rate, 0)} at ${leadBand(big)}. By role, a 1k+ lane lead was
-      worth least for ${ROLE_PLAYER[worst.role]}s (${pct(worst.win_rate, 0)}), with the other roles between
-      ${pct(others[0].win_rate, 0)} and ${pct(others.at(-1).win_rate, 0)}.`;
+    return `A small lead at ${minute} minutes isn't much to get excited about: teams less than 1k ahead won
+      ${pct(small.win_rate, 0)}. It climbs quickly after that, to ${pct(mid.win_rate, 0)} at 1–2k and ${pct(big.win_rate, 0)}
+      at ${leadBand(big)}. A 1k+ lane lead was worth least to ${ROLE_PLAYER[worst.role]}s (${pct(worst.win_rate, 0)})${worst.role === "TOP"
+      ? ", which fits how cut off top lane is from the rest of the map" : ""}. The other roles were
+      ${(others[0].win_rate * 100).toFixed(0)}–${pct(others.at(-1).win_rate, 0)}.`;
   };
   const leadColumns = () => bandsAt().map((b) => rateColumn(b.band_min, b.win_rate, b.win_rate_moe, leadBand(b),
     `${leadBand(b)} gold ahead at ${minute} min\nWon ${num(b.wins)} of ${num(b.games)} games\n${pct(b.win_rate)} (${moe(b.win_rate_moe)})`, 0)).join("");
@@ -1108,8 +1107,8 @@ async function renderInsights(ticket) {
   const leadMethod = () => `The leading team's win rate by team gold at ${minute}:00, with the 95% margin of error. The
     dashed line is 50%. Only games still going at that minute count (${num(bandsAt().reduce((s, b) => s + b.games, 0))} at ${minute}
     minutes, with ties left out), so the later minutes lean towards longer games. A lane lead is a player 1,000+ gold ahead
-    of their opponent in the same role. A gold lead also shows which team is playing better, so it isn't only the gold
-    that's winning games.`;
+    of their opponent in the same role. The team that's ahead on gold is usually also playing better, so not all of
+    this is down to the gold itself.`;
 
   // Winners against losers: one bar per stat, for the role picked in the slicer.
   const gapRows = now(gaps);
@@ -1238,23 +1237,16 @@ async function renderInsights(ticket) {
       ${kpiTriangle(vol)}
     </div>
 
-    <div class="kpi-strip reveal">
-      ${kpi("Rune choices", vol.rune_choices, "Six per player")}
-      ${kpi("Bans", vol.bans, "Up to ten per match")}
-      ${kpi("Champions played", banRows.length, "Across all five roles")}
-      ${kpi("Days of games", Math.round((new Date(db.lastGame) - new Date(db.firstGame)) / 864e5) + 1, `${dateName(db.firstGame)} – ${dateName(db.lastGame)}`)}
-    </div>
-
     ${topObjective ? `<section class="card reveal" id="objectives">
       <div class="card-head">
         <div>
           <h2>Win rate by first objective</h2>
           ${objectiveFinding ? `<p class="finding">${objectiveFinding}</p>` : ""}
-          <p class="lede">${early.length ? `I wanted to know which early objective is worth the most. The team that took ${early.slice(0, -1).join(", ")}${early.length > 1 ? " and " : ""}${early.at(-1)}.` : ""}${heraldLine ? `
+          <p class="lede">${early.length ? `I wanted to know which early objective is worth the most. Teams that took ${early.slice(0, -1).join(", ")}${early.length > 1 ? " and " : ""}${early.at(-1)}.` : ""}${heraldLine ? `
             ${heraldLine}` : ""}${firstBlood ? `
-            First blood, the first kill of the game, mattered less than I expected at ${pct(firstBlood.win_rate, 0)}.` : ""}${late.length ? `
+            First blood was lower than I expected at ${pct(firstBlood.win_rate, 0)}.` : ""}${late.length ? `
             ${late.map((o, i) => `${esc(i ? inSentence(objectiveName(o.objective)) : objectiveName(o.objective))} (${pct(o.win_rate, 0)})`).join(" and ")}
-            are higher, but by the time they're taken the game is usually decided.` : ""}</p>
+            are higher, but by then the game is usually already decided.` : ""}</p>
         </div>
       </div>
       <div class="insight-grid">
@@ -1323,19 +1315,20 @@ async function renderInsights(ticket) {
       <div class="card-head">
         <div>
           <h2>Winners vs losers: <span class="gap-role">${ROLE_PLAYER[gapRole]}s</span></h2>
-          <p class="finding">Winners died ${range("Deaths")} less than losers. The farm gap was only ${farmRange}.</p>
-          <p class="lede">Against the losing player in the same role, winners farmed (killed minions and monsters for
-            gold) only ${farmRange} more per minute.${supportFarm < 0
-            ? ` Winning supports farmed ${Math.round(-supportFarm * 100)}% less, since they leave the minions to their bot laner.` : ""}
-            Their first item came ${range("First item (min)")} sooner. The bigger differences were in fights, with winners
-            getting ${range("Kills + assists")} more kills and assists and dying ${range("Deaths")} less. Some of that comes
-            from winning rather than causing it, because a team that's ahead gets to choose its fights.</p>
+          <p class="finding">Dying less mattered more than farming more.</p>
+          <p class="lede">I expected farm to be what separated winners from losers, but it was one of the smallest
+            differences. Against the loser in the same role, winners farmed ${farmRange} more and got their first item
+            ${range("First item (min)")} sooner. The big gaps were deaths (${range("Deaths")} fewer) and kills and assists
+            (${range("Kills + assists")} more).${supportFarm < 0
+            ? ` Winning supports even farmed ${Math.round(-supportFarm * 100)}% less, because they leave the minions to their bot laner.` : ""}
+            Some of this is just what winning looks like: a team that's ahead gets to pick its fights.</p>
         </div>
         ${slicer(roles, gapRole, "Role")}
       </div>
       <div class="bars">${metrics.map(gapBar).join("")}</div>
-      <p class="method">Winning players' average compared with losing players' in the same role.
-        <span class="swatch"></span> favours the winners and <span class="swatch against"></span> the losers. Hover over a bar to see the averages.</p>
+      <p class="method">Each bar compares the winner's average with the loser's in the same role. Farm is gold from
+        minions and monsters. <span class="swatch"></span> winner ahead, <span class="swatch against"></span> loser ahead.
+        Hover a bar for the averages.</p>
     </section>
 
     <section class="card reveal" id="bans">
@@ -1343,13 +1336,12 @@ async function renderInsights(ticket) {
         <div>
           <h2>Win rate by ban rate</h2>
           <p class="finding">${Math.abs(topBand.win_rate - bands.at(-1).win_rate) < 0.02
-            ? "The most banned champions don't win more often."
+            ? "Champions that get banned a lot don't win more."
             : `Champions banned in 10%+ of games won ${pct(topBand.win_rate)}, against ${pct(bands.at(-1).win_rate)} for the rarely banned.`}</p>
           <p class="lede">The ${num(topBand.champions)} champions banned in 10%+ of games won ${pct(topBand.win_rate)}
-            of the games they weren't banned in, compared with ${pct(bands.at(-1).win_rate)} for the ${num(bands.at(-1).champions)}
-            banned in under 3%. That's only ${(Math.abs(topBand.win_rate - bands.at(-1).win_rate) * 100).toFixed(1)} points for a
-            very big difference in how often they're banned. It looks like players ban the champions they find frustrating
-            to play against, more than the ones that win.</p>
+            of the games they were allowed in. The ${num(bands.at(-1).champions)} banned in under 3% won
+            ${pct(bands.at(-1).win_rate)}. That's only ${(Math.abs(topBand.win_rate - bands.at(-1).win_rate) * 100).toFixed(1)}
+            points apart. My guess is people ban the champions they hate playing against, not the ones that actually win.</p>
         </div>
       </div>
       <div class="ban-grid">
@@ -1370,7 +1362,7 @@ async function renderInsights(ticket) {
           <h2>Raw vs adjusted win rate</h2>
           <p class="finding">${luckiest === leader
             ? `${esc(leader.champion_name)} has the highest win rate, over enough games for it to hold up.`
-            : `${esc(luckiest.champion_name)}'s ${pct(luckiest.win_rate)} came from only ${num(luckiest.games)} games. Once that's adjusted for, ${esc(leader.champion_name)} ranks first.`}</p>
+            : `${esc(luckiest.champion_name)} has the best raw win rate, but from only ${num(luckiest.games)} games. After the adjustment, ${esc(leader.champion_name)} is first.`}</p>
           <p class="lede">${luckiest === leader
             ? `${esc(leader.champion_name)} has the highest win rate, ${pct(leader.win_rate)} over ${num(leader.games)} games,
               which is enough games for it to hold up. To stop a short lucky run from topping the tier list, I add
@@ -1456,7 +1448,7 @@ async function renderInsights(ticket) {
         </li>
       </ol>
       <details class="checks">
-        <summary><span class="pulse" aria-hidden="true"></span>${passed} of ${checks.length} data checks pass${passed < checks.length ? `, ${checks.length - passed} ${checks.some((c) => c.failures && c.is_blocking) ? "flagged" : "warnings"}` : ""}</summary>
+        <summary><span class="${passed === checks.length ? "good" : "warn"}" aria-hidden="true">${passed === checks.length ? "✓" : "!"}</span><span class="label">${passed} of ${checks.length} data checks pass${passed < checks.length ? `, ${checks.length - passed} ${checks.some((c) => c.failures && c.is_blocking) ? "flagged" : "warnings"}` : ""}</span></summary>
         <ul>${checks.map((c) => `<li><span class="${c.failures === 0 ? "good" : c.is_blocking ? "bad" : "warn"}">${c.failures === 0 ? "✓" : c.is_blocking ? "✗" : "!"}</span>
           ${esc(c.check_name)}${c.failures ? ` <span class="faint">(${num(c.failures)})</span>` : ""}${c.is_blocking ? "" : ' <span class="faint">· warning only</span>'}</li>`).join("")}</ul>
       </details>
