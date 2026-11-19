@@ -17,7 +17,7 @@ single player dominates the sample.
 
 ## Why BigQuery, and where the JSON lives
 
-The model and every stat on the site are BigQuery SQL. It runs on the free sandbox, which needs no
+The model and every stat on the site are BigQuery SQL; the marts are a dbt project (`dbt/`). It runs on the free sandbox, which needs no
 billing account but allows no DML (`INSERT`, `UPDATE`, `DELETE`, `MERGE`) and expires tables after
 60 days. So:
 
@@ -69,7 +69,7 @@ unfinished one is dropped and collection moves on.
 | `riot_dim` | Champion, item, rune and summoner spell names from Data Dragon | `ddragon.py` |
 | `riot_fact` | Matches, player records, items, runes, bans, team objectives | `transform.py` (matches) |
 | `riot_fact` | Shop events, gold at 10/15/20/25 minutes, skill order | `transform.py` (timelines) |
-| `riot_mart` | One table per table on the website | `sql/2_marts`, rebuilt by `build` |
+| `riot_mart` | One table per table on the website | dbt (`dbt/models/marts`), rebuilt by `build` |
 | `riot_etl` | `patch`, copied from the store | `patches.py` |
 
 The main fact table, `riot_fact.match_participant`, has one row per player per match (10 per match).
@@ -146,6 +146,11 @@ better team tends to get the objectives, kills and gold as well.
 `sql/3_checks` is one query with a row per check (every match has 10 players, exactly one winning team,
 no objective taken first by both teams, and so on). `python -m riot_meta check` fails if a
 blocking check fails, and the collector only publishes when they all pass.
+
+Before that, `dbt build` tests every mart as it builds it (`dbt/models/marts/_marts.yml`): its key
+columns are never null and never repeat, win rates, pick rates and shares lie between 0 and 1,
+and the tier list's margin of error is at most 0.98 (1.96 × √0.25). A failed test stops the
+build, so a broken mart never reaches the export.
 
 ## Known limits
 

@@ -37,7 +37,7 @@ Riot Games API ─► Python ─► local store (SQLite)   raw JSON, as download
                              │    parsed in Python, load jobs
                              ▼
                             riot_dim + riot_fact   star schema in BigQuery
-                             │    SQL, rebuilt daily
+                             │    dbt models, rebuilt and tested daily
                              ▼
                             riot_mart ─► JSON files ─► website
 ```
@@ -46,8 +46,9 @@ Riot Games API ─► Python ─► local store (SQLite)   raw JSON, as download
    the raw JSON (gzipped) in a local SQLite store, along with the download queue.
 2. **Python parses** the JSON into rows and loads them into the BigQuery `riot_dim` and
    `riot_fact` tables with load jobs.
-3. **BigQuery SQL** in `riot_mart` calculates the stats: win rates by objective, gold lead, ban
-   rate and game length, plus builds and the tier list.
+3. **dbt models** build the `riot_mart` tables in BigQuery: win rates by objective, gold lead,
+   ban rate and game length, plus builds and the tier list. Each mart is tested on every build
+   for its grain (no duplicate or missing keys) and for rates that stay between 0 and 1.
 4. **Python exports** each mart table to a JSON file, which the website reads.
 
 It runs on the free BigQuery sandbox. That allows no `INSERT`/`UPDATE`/`DELETE`, so rows go in
@@ -56,14 +57,15 @@ bytes it may scan.
 
 ## Where to look
 
-**SQL** (`sql/`, run in folder and file order)
+**SQL** (`sql/` sets up the tables Python loads; `dbt/` builds the marts from them)
 
 | Folder | What's in it |
 |---|---|
 | [0_setup](sql/0_setup) | The BigQuery datasets |
 | [1_model](sql/1_model) | The star schema: `dim_` and `fact_` tables, and `etl.patch` |
-| [2_marts](sql/2_marts) | One table per stat on the site; [22_tier_list.sql](sql/2_marts/22_tier_list.sql) is the main one |
 | [3_checks](sql/3_checks) | Data-quality checks, one row per check |
+| [dbt/models/staging](dbt/models/staging) | One thin model per source table (ephemeral, so no extra tables) |
+| [dbt/models/marts](dbt/models/marts) | One model per mart; [tier_list.sql](dbt/models/marts/tier_list.sql) is the main one, [_marts.yml](dbt/models/marts/_marts.yml) has the tests |
 
 **Python** (`src/riot_meta/`)
 
@@ -76,9 +78,9 @@ bytes it may scan.
 | [parse.py](src/riot_meta/parse.py) | Turns the raw JSON into fact and dim rows |
 | [transform.py](src/riot_meta/transform.py) | Loads new matches and timelines into BigQuery |
 | [patches.py](src/riot_meta/patches.py) | Which patch is live and which is collecting |
-| [warehouse.py](src/riot_meta/warehouse.py) | Connects to BigQuery and runs the `sql/` scripts |
+| [warehouse.py](src/riot_meta/warehouse.py) | Connects to BigQuery, loads rows and runs the `sql/` scripts |
 | [ddragon.py](src/riot_meta/ddragon.py) | Downloads champion, item and rune names |
-| [export.py](src/riot_meta/export.py) | Writes the mart tables to `site/data/*.json` |
+| [export.py](src/riot_meta/export.py) | Runs `dbt build` and writes the mart tables to `site/data/*.json` |
 
 **Other:** [site/](site) is the website (HTML, CSS, JavaScript), [tests/](tests) are the pytest
 tests, and [docs/how-it-works.md](docs/how-it-works.md) has the definitions and method.
@@ -100,7 +102,7 @@ python -m riot_meta queue --more 1000 # games of that patch, up to MATCHES_PER_P
 python -m riot_meta fetch             # download matches (safe to stop and re-run)
 python -m riot_meta fetch-timelines   # download timelines (safe to stop and re-run)
 python -m riot_meta transform         # parse new JSON and load it into BigQuery
-python -m riot_meta build             # rebuild the mart tables
+python -m riot_meta build             # dbt build: rebuild and test the marts
 python -m riot_meta check             # data-quality checks
 python -m riot_meta export            # mart tables -> site/data/*.json
 python -m riot_meta status            # row counts at every stage

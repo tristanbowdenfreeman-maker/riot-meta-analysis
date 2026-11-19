@@ -18,4 +18,7 @@ __pycache__/
 *.log
 
 # Local store (raw JSON and download queue)
-data/
+/data/
+dbt/target/
+dbt/logs/
+dbt/.user.yml

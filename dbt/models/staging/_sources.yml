@@ -1,0 +1,28 @@
+version: 2
+
+# The tables Python loads: facts from the raw match and timeline JSON (transform.py), names from
+# Data Dragon (ddragon.py), and the live/collecting patch copied from the local store (patches.py).
+sources:
+  - name: riot_fact
+    tables:
+      - name: match
+      - name: match_participant
+      - name: participant_item
+      - name: participant_rune
+      - name: match_ban
+      - name: match_timeline
+      - name: item_event
+      - name: team_objective
+      - name: participant_frame
+      - name: participant_skills
+  - name: riot_dim
+    tables:
+      - name: champion
+      - name: item
+      - name: rune_tree
+      - name: rune
+      - name: summoner_spell
+      - name: stat_shard
+  - name: riot_etl
+    tables:
+      - name: patch

@@ -1,6 +1,8 @@
 requests>=2.32
 python-dotenv>=1.0
 google-cloud-bigquery>=3.25
+dbt-core>=1.12,<1.13
+dbt-bigquery>=1.12,<1.13
 pytest>=8.0
 # Only for the one-off `migrate-mssql` command, which copies the old SQL Server database.
 pymssql>=2.3

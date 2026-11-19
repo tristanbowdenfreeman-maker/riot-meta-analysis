@@ -1,0 +1,22 @@
+# BigQuery connection. `oauth` uses your gcloud application-default login
+# (`gcloud auth application-default login`). `token` takes a short-lived access token from
+# BQ_TOKEN instead, e.g. `BQ_TOKEN=$(gcloud auth print-access-token) DBT_TARGET=token`.
+riot_meta:
+  target: "{{ env_var('DBT_TARGET', 'oauth') }}"
+  outputs:
+    oauth: &bigquery
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('BQ_PROJECT') }}"
+      dataset: riot_mart
+      location: "{{ env_var('BQ_LOCATION', 'EU') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      # The cap on bytes any one query may scan (20 GB), so a mistake fails instead of using up
+      # the free 1 TB a month. Matches BQ_MAX_GB_BILLED for the Python side.
+      maximum_bytes_billed: 20000000000
+    token:
+      <<: *bigquery
+      method: oauth-secrets
+      token: "{{ env_var('BQ_TOKEN', '') }}"

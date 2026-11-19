@@ -1,0 +1,21 @@
+# The marts behind the website, built in BigQuery from the fact and dim tables that
+# `python -m riot_meta transform` and `ddragon` load. `python -m riot_meta build` runs `dbt build`.
+name: riot_meta
+version: "1.0.0"
+config-version: 2
+profile: riot_meta
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+clean-targets: ["target", "logs"]
+
+models:
+  riot_meta:
+    # One thin model per source table. Ephemeral: they're inlined as CTEs, so they add no tables
+    # or datasets to the sandbox.
+    staging:
+      +materialized: ephemeral
+    # One table per mart, all in riot_mart; export.py reads them from there.
+    marts:
+      +materialized: table

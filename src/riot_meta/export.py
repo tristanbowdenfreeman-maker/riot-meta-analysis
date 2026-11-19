@@ -10,11 +10,14 @@ They hold aggregated stats only, no player IDs.
 import json
 import math
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 from riot_meta import checks
 from riot_meta.config import PROJECT_ROOT
 from riot_meta.patches import REMAKE_SECONDS
-from riot_meta.warehouse import Warehouse, sql_files
+from riot_meta.warehouse import Warehouse
+
+DBT_DIR = PROJECT_ROOT / "dbt"
 
 EXPORT_DIR = PROJECT_ROOT / "site" / "data"
 MART_TABLES = [
@@ -53,11 +56,19 @@ LOOKUPS = {
 }
 
 
+def mart_models() -> list[Path]:
+    """The dbt models that become riot_mart tables."""
+    return sorted((DBT_DIR / "models" / "marts").glob("*.sql"))
+
+
 def build(warehouse: Warehouse) -> None:
-    """Rebuild every mart table, then push back the sandbox's table expiry."""
-    for path in sql_files("2_marts"):
-        warehouse.run_file(path)
-        print(f"  built riot_mart.{path.stem[3:]}")
+    """Rebuild every mart table and run its tests (`dbt build`), then push back the sandbox's
+    expiry on every table, the facts included."""
+    from dbt.cli.main import dbtRunner  # imported here: dbt is slow to import
+
+    result = dbtRunner().invoke(["build", "--project-dir", str(DBT_DIR), "--profiles-dir", str(DBT_DIR)])
+    if not result.success:
+        raise SystemExit("dbt build failed (see above); the marts were not all rebuilt")
     warehouse.refresh_expiry()
 
 
@@ -93,7 +104,7 @@ def _local_volume(conn, row: dict, platform: str) -> None:
         (row["patch"], REMAKE_SECONDS, len(prefix), prefix),
     ).fetchone()[0] or 0
     row["raw_json_mb"] = raw_bytes / 1048576
-    row["mart_views"] = len(sql_files("2_marts"))
+    row["mart_views"] = len(mart_models())
 
 
 def export_marts(conn, warehouse: Warehouse, platform: str) -> None:

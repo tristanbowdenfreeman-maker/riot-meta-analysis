@@ -1,0 +1,651 @@
+version: 2
+
+# Every mart: its grain (unique key, never null) and rates or shares that must lie in [0, 1].
+models:
+  - name: ban_band_win_rate
+    description: "Win rate of champions grouped by how often they are banned. win_rate_moe is the 95% margin of error (games are player records, so it slightly understates it for champions who often meet themselves in a match; that's rare). Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, band_order]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: band_order
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: ban_vs_win
+    description: "Ban rate against win rate for every champion, all roles together. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: ban_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_boots
+    description: "First pair of boots bought (tier 2 boots; the 300-gold Boots component is not in the Boots class). Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, item_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: item_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_class_matchups
+    description: "Lane matchups grouped by the opponent's class. Single champion pairs are too small at this sample size (a typical pair has under 10 games); six classes give each champion a full list with enough games per row to read. pick_share is how often the champion faced that class in lane. In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, opponent_class]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: opponent_class
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_core_builds
+    description: "Core builds: the first three completed items, in order. Only players who finished three. Kept for analysis but not exported: at 4,000 matches most combinations have too few games to show, so the site lists core items instead (champion_core_items). In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, item1_id, item2_id, item3_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: item1_id
+        data_tests: [not_null]
+      - name: item2_id
+        data_tests: [not_null]
+      - name: item3_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_core_items
+    description: "Core items: completed items finished 1st, 2nd or 3rd, in one list. Exact three-item orders spread a champion's games over dozens of combinations; counting each item wherever it lands in the first three keeps every champion's list full. avg_slot is where it usually lands (1 = first item). pick_share is out of all the champion's players in the role; a player builds up to three core items, so the shares add up to at most 3. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, item_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: item_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_game_length
+    description: "Which champions win short games and which win long ones, all roles together. Short games end before 25 minutes and long games last 33+ (about the shortest and longest quarter of games). swing = long-game win rate minus short-game win rate: + means the champion gets stronger as the game goes on. Champions need 300+ games in both lengths. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: short_win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: long_win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: short_match_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: long_match_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_item_stats
+    description: "Completed items and boots in the final inventory, per champion and role. In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, item_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: item_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: champion_win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_late_items
+    description: "Late items: completed items built after the core, i.e. 4th or later. Only about a quarter of players finish a 4th item in games that average 28 minutes, so the site shows how often each is built but not its win rate: players who get this far are in longer games. pick_share is the share of the champion's players who reached a 4th item that built this item 4th or later. A player can build several late items, so the shares add up to 1 or more. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, item_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: item_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_matchups
+    description: "Lane matchups: each player against the enemy in the same role. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, opponent_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: opponent_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_rank_win_rate
+    description: "Each champion's win rate by rank, per role. The rank is the tier of the player whose match history the game came from (riot_fact.match.sample_tier); matchmaking keeps the other nine close to it. Master, Grandmaster and Challenger are grouped as Master+, since the top two hold few games. pick_rate = share of the rank's matches with the champion in that role. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, rank_band]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: rank_band
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_role_stats
+    description: "Tier list: one row per champion per role per patch. In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: ban_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: role_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_rune_picks
+    description: "Every rune on a rune page, for the rune grid: how often players on that page take it, and its win rate. pick_share is out of the page's games, so each row of the grid adds up to 1. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, page_rank, rune_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: page_rank
+        data_tests: [not_null]
+      - name: rune_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_rune_stats
+    description: "Rune pages: keystone plus primary/secondary tree combinations. page_rank 1 is the most played (ties broken by id so the ranking is stable); the rune grid below covers pages 1 and 2. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, page_rank]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: page_rank
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_shard_picks
+    description: "Stat shards on each rune page, by row (1 = offense, 2 = flex, 3 = defense). Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, page_rank, shard_row, shard_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: page_rank
+        data_tests: [not_null]
+      - name: shard_row
+        data_tests: [not_null]
+      - name: shard_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_skill_paths
+    description: "Skill paths per champion and role: the first three skills plus the order Q, W and E are maxed (riot_fact.participant_skills). Slots: 1-3 = Q, W, E; 4 = R. start '312' + max_order '312' = E, Q, W at levels 1-3, then E maxed first, then Q, then W. Only players who reached 11 level-ups count. levels = the skill most often taken at each level 1-18 by players on that path. Paths need 20+ games. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, start, max_order]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: start
+        data_tests: [not_null]
+      - name: max_order
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_spell_stats
+    description: "Summoner spell pairs. Flash on D and on F count as the same pair. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, spell_a_id, spell_b_id]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: spell_a_id
+        data_tests: [not_null]
+      - name: spell_b_id
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: champion_starter_sets
+    description: "Starter sets: everything bought (and kept) in the first 90 seconds, except the trinket. starter_items lists item_id:quantity pairs, e.g. '1055:1,2003:1' = Doran's Blade + Health Potion. The game gives each support a free World Atlas (3865) at 0:00. The timeline logs that grant under participant 0 rather than the support, so it is added here for every UTILITY player. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role, starter_items]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: starter_items
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: completed_item_order
+    description: "Each player's completed items numbered in the order they were first bought (1st item, 2nd item...). In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [match_id, participant_id, item_number]
+    columns:
+      - name: match_id
+        data_tests: [not_null]
+      - name: participant_id
+        data_tests: [not_null]
+      - name: item_number
+        data_tests: [not_null]
+  - name: data_volume
+    description: "The size of the data behind each patch, for the headline figures on the site. ladder_players, raw_json_mb and mart_views come from outside BigQuery (the local store and the list of marts), so export.py fills them in. Exported to site/data."
+    columns:
+      - name: patch
+        data_tests: [unique, not_null]
+  - name: gold_lead_win_rate
+    description: "How often a team gold lead at 10, 15, 20 or 25 minutes turns into a win, by size of lead. Only games still going at that minute count, and exact ties are left out. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, minute, band_min]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: minute
+        data_tests: [not_null]
+      - name: band_min
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: item_purchase
+    description: "Purchases that were not undone. An undo reverts the most recent purchase of that item, so a purchase counts as undone when an undo of the same item follows it before the item is bought again. (Two purchases of the same item followed by two undos would keep the first one; that only happens with consumables and doesn't affect completed items.) In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [match_id, participant_id, event_seq]
+    columns:
+      - name: match_id
+        data_tests: [not_null]
+      - name: participant_id
+        data_tests: [not_null]
+      - name: event_seq
+        data_tests: [not_null]
+  - name: lane_lead_win_rate
+    description: "Which lane's lead matters most: when one laner is 1,000+ gold ahead of the opponent in the same role at that minute, how often their team wins. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, minute, role]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: minute
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: objective_count_win_rate
+    description: "Win rate by how many of an objective a team took (capped, e.g. '4+ dragons'). Kills are left out: a kill count says more about game length than about the objective. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, objective, taken]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: objective
+        data_tests: [not_null]
+      - name: taken
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: objective_win_rate
+    description: "What each objective is worth: how often the team that took it first went on to win, and how often anyone took it at all. objective 'champion' is first blood. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, objective]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: objective
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: taken_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: patch_summary
+    description: "Denominators: pick and ban rates are shares of all valid matches in the patch. Exported to site/data."
+    columns:
+      - name: patch
+        data_tests: [unique, not_null]
+  - name: role_win_gap
+    description: "Winners against losers in each role: the average of each stat for players who won and for players who lost. gap is winners / losers - 1 (-0.35 = winners have 35% less). Deaths and the first-item time are better when lower. These are outcomes as much as causes: a team that is winning gets kills and gold, which is why the page says 'differ', not 'cause'. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, role, metric]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: metric
+        data_tests: [not_null]
+  - name: rune_page_player
+    description: "Players on each champion's two most played rune pages, for the rune grid and shards below. In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [match_id, participant_id]
+    columns:
+      - name: match_id
+        data_tests: [not_null]
+      - name: participant_id
+        data_tests: [not_null]
+  - name: sample_by_tier
+    description: "How the sample splits across ranks (tier of the player the match was sampled from). Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, sample_tier]
+    columns:
+      - name: sample_tier
+        data_tests: [not_null]
+      - name: patch
+        data_tests: [not_null]
+  - name: side_win_rate
+    description: "Blue side against red side. Every match has one winner, so the two win rates add up to 1. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, side]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: side
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: team_result
+    description: "One row per team per valid match: did it win (1 or 0)? The objective and gold-lead marts join to this. In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [match_id, team_id]
+    columns:
+      - name: match_id
+        data_tests: [not_null]
+      - name: team_id
+        data_tests: [not_null]
+  - name: tier_list
+    description: "Tier list. Champions are ranked within each role by an adjusted win rate: their record plus prior_games extra games at 50%, which pulls small samples towards 50%. prior_games is estimated from the data (empirical Bayes, method of moments). Win rates differ between champions partly for real and partly by chance; the chance part is known (p(1 - p) / games), so subtracting it from the observed variance leaves the real variance. The smaller the real differences, the more games a champion needs before its own record outweighs 50%: prior_games = 0.25 / real variance. On 3,000 matches real win rates spread by about 3 points either side of 50%, which gives about 255 games: 38-18 (67.9%) becomes 53.2%, while 211-153 (58.0%) only falls to 54.7%. win_rate_moe is the 95% margin of error of the raw win rate (1.96 standard errors). Only champion/role pairs picked in at least 1% of matches and making up at least 10% of the champion's games are ranked; the rest get no tier. Tiers are cut by rank within the role. Exported to site/data."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [patch, champion_id, role]
+    columns:
+      - name: patch
+        data_tests: [not_null]
+      - name: champion_id
+        data_tests: [not_null]
+      - name: role
+        data_tests: [not_null]
+      - name: win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: pick_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: ban_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: role_share
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: adjusted_win_rate
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: win_rate_moe
+        description: 1.96 x sqrt(p(1 - p) / games); at most 1.96 x sqrt(0.25) = 0.98
+        data_tests:
+          - between:
+              arguments: {min_value: 0, max_value: 0.98}
+  - name: timeline_participant
+    description: "Player records in valid matches whose timeline has been loaded: the base for every build-order mart, so shares are out of players we can actually see the purchases of. In-between table read by other marts."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [match_id, participant_id]
+    columns:
+      - name: match_id
+        data_tests: [not_null]
+      - name: participant_id
+        data_tests: [not_null]
+  - name: valid_match
+    description: "Matches that count towards the stats: EUW ranked solo/duo, no remakes, on the live patch. EUW players' histories also hold games on other European servers (EUN1_, TR1_, RU_), which are out of scope. A new patch being collected stays out of every mart until it goes live (riot_etl.patch). Games stopped by the server (e.g. endOfGameResult 'Abort_AntiCheatExit') have no winner and are left out. In-between table read by other marts."
+    columns:
+      - name: match_id
+        data_tests: [unique, not_null]

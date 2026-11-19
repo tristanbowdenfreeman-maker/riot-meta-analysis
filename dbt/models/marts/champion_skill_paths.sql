@@ -1,0 +1,55 @@
+-- Skill paths per champion and role: the first three skills plus the order Q, W and E are maxed
+-- (riot_fact.participant_skills). Slots: 1-3 = Q, W, E; 4 = R. start '312' + max_order '312' = E, Q, W
+-- at levels 1-3, then E maxed first, then Q, then W. Only players who reached 11 level-ups count.
+-- levels = the skill most often taken at each level 1-18 by players on that path. Paths need 20+ games.
+WITH player AS (
+    SELECT m.patch, p.champion_id, p.team_position AS role, CAST(p.win AS INT64) AS win,
+           s.skill_start AS start, s.max_order, s.skill_levels
+    FROM {{ ref('valid_match') }} AS m
+    JOIN {{ ref('stg_fact_match_participant') }} AS p ON p.match_id = m.match_id
+    JOIN {{ ref('stg_fact_participant_skills') }} AS s ON s.match_id = p.match_id AND s.participant_id = p.participant_id
+    WHERE p.team_position IS NOT NULL
+      AND s.max_order IS NOT NULL
+),
+path AS (
+    SELECT patch, champion_id, role, start, max_order,
+           COUNT(*)                                                             AS games,
+           SUM(win)                                                             AS wins,
+           COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY patch, champion_id, role) AS pick_share
+    FROM player
+    GROUP BY patch, champion_id, role, start, max_order
+),
+kept AS (
+    SELECT * FROM path WHERE games >= 20
+),
+level_count AS (
+    SELECT pl.patch, pl.champion_id, pl.role, pl.start, pl.max_order, level,
+           SUBSTR(pl.skill_levels, level, 1) AS slot, COUNT(*) AS n
+    FROM player AS pl
+    JOIN kept AS k ON k.patch = pl.patch AND k.champion_id = pl.champion_id AND k.role = pl.role
+                  AND k.start = pl.start AND k.max_order = pl.max_order
+    CROSS JOIN UNNEST(GENERATE_ARRAY(1, 18)) AS level
+    WHERE LENGTH(pl.skill_levels) >= level
+    GROUP BY pl.patch, pl.champion_id, pl.role, pl.start, pl.max_order, level, slot
+),
+level_pick AS (
+    SELECT *,
+           ROW_NUMBER() OVER (PARTITION BY patch, champion_id, role, start, max_order, level
+                              ORDER BY n DESC, slot) AS pick
+    FROM level_count
+),
+path_levels AS (
+    SELECT patch, champion_id, role, start, max_order,
+           STRING_AGG(slot, '' ORDER BY level) AS levels
+    FROM level_pick
+    WHERE pick = 1
+    GROUP BY patch, champion_id, role, start, max_order
+)
+SELECT k.patch, k.champion_id, k.role, k.start, k.max_order, k.games, k.wins,
+       k.wins / k.games AS win_rate,
+       k.pick_share,
+       l.levels
+FROM kept AS k
+JOIN path_levels AS l
+  ON l.patch = k.patch AND l.champion_id = k.champion_id AND l.role = k.role
+ AND l.start = k.start AND l.max_order = k.max_order

@@ -9,7 +9,8 @@
 #   3. Downloads the matches and timelines into the local store, loads them into BigQuery, and
 #      runs `patch` again: a new patch with a full sample goes live and the old patch's data is
 #      deleted.
-#   4. Once a day: rebuilds the BigQuery marts, runs the data checks and, if they pass,
+#   4. Once a day: rebuilds and tests the BigQuery marts (`build`: sync the live patch, `dbt build`,
+#      push back the sandbox expiry), runs the data checks and, if they pass,
 #      re-exports site/data and publishes it to the portfolio (scripts/publish.sh). Daily keeps
 #      the BigQuery scanning far inside the free 1 TB a month.
 #

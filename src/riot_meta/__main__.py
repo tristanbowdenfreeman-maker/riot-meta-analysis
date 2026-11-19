@@ -183,7 +183,7 @@ def main() -> None:
 
     sub.add_parser("transform", help="parse new raw matches and timelines and load them into BigQuery").set_defaults(
         func=cmd_transform)
-    sub.add_parser("build", help="rebuild the mart tables in BigQuery").set_defaults(func=cmd_build)
+    sub.add_parser("build", help="sync the live patch, rebuild and test the marts (dbt build), refresh expiry").set_defaults(func=cmd_build)
     sub.add_parser("check", help="run data-quality checks (after build)").set_defaults(func=cmd_check)
     sub.add_parser("export", help="export the mart tables to site/data/*.json (after build)").set_defaults(
         func=cmd_export)
