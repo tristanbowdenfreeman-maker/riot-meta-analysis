@@ -1,18 +1,18 @@
-"""The four fetch stages. Each one writes to SQL Server as it goes, so any stage can be stopped
-and re-run without losing work.
+"""The four fetch stages. Each one writes to the local store (store.py) as it goes, so any stage
+can be stopped and re-run without losing work.
 
-1. discover:        find Emerald+ solo/duo players          -> stg.player
-2. queue:           collect their recent ranked match IDs    -> stg.match_queue
-3. fetch:           download each queued match's JSON        -> stg.match_raw
-4. fetch-timelines: download each fetched match's timeline   -> stg.timeline_raw
+1. discover:        find Emerald+ solo/duo players          -> player
+2. queue:           collect their recent ranked match IDs    -> match_queue
+3. fetch:           download each queued match's JSON        -> match_raw
+4. fetch-timelines: download each fetched match's timeline   -> timeline_raw
 """
 
-import gzip
 import json
 import random
 import time
 
 from riot_meta.client import RiotApiError, RiotClient
+from riot_meta.store import compress
 
 # Emerald and above. Apex tiers have a single division.
 LADDER = [
@@ -27,7 +27,6 @@ MAX_FETCH_ATTEMPTS = 3
 
 def discover(client: RiotClient, conn, pages_per_division: int) -> int:
     """Store up to `pages_per_division` pages (205 players each) of every division."""
-    cursor = conn.cursor()
     total = 0
     for tier, divisions in LADDER:
         for division in divisions:
@@ -35,19 +34,17 @@ def discover(client: RiotClient, conn, pages_per_division: int) -> int:
                 entries = [e for e in client.league_entries(tier, division, page) if e.get("puuid")]
                 if not entries:
                     break
-                cursor.executemany(
-                    """
-                    MERGE stg.player AS t
-                    USING (SELECT %s AS puuid, %s AS tier, %s AS division, %s AS league_points,
-                                  %s AS wins, %s AS losses) AS s
-                       ON t.puuid = s.puuid
-                    WHEN MATCHED THEN UPDATE SET tier = s.tier, division = s.division,
-                         league_points = s.league_points, wins = s.wins, losses = s.losses
-                    WHEN NOT MATCHED THEN INSERT (puuid, tier, division, league_points, wins, losses)
-                         VALUES (s.puuid, s.tier, s.division, s.league_points, s.wins, s.losses);
-                    """,
-                    [(e["puuid"], e["tier"], e["rank"], e["leaguePoints"], e["wins"], e["losses"]) for e in entries],
-                )
+                with conn:
+                    conn.executemany(
+                        """
+                        INSERT INTO player (puuid, tier, division, league_points, wins, losses)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (puuid) DO UPDATE SET tier = excluded.tier, division = excluded.division,
+                            league_points = excluded.league_points, wins = excluded.wins, losses = excluded.losses
+                        """,
+                        [(e["puuid"], e["tier"], e["rank"], e["leaguePoints"], e["wins"], e["losses"])
+                         for e in entries],
+                    )
                 total += len(entries)
                 print(f"  {tier} {division} page {page}: {len(entries)} players")
     return total
@@ -64,32 +61,28 @@ def queue_matches(
     A player's history covers every server in the region (EUW, EUNE, TR, RU), so only match IDs
     from `platform` (e.g. EUW1_...) are queued."""
     prefix = f"{platform.upper()}_"
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM stg.match_queue WHERE status <> 'failed' AND match_id LIKE %s", (prefix + "%",))
-    queued = cursor.fetchone()[0]
+    queued = conn.execute(
+        "SELECT COUNT(*) FROM match_queue WHERE status <> 'failed' AND substr(match_id, 1, ?) = ?",
+        (len(prefix), prefix),
+    ).fetchone()[0]
     if more is not None:
         target = queued + more
 
-    cursor.execute("SELECT puuid, tier FROM stg.player WHERE match_ids_fetched_at IS NULL ORDER BY puuid")
-    players = cursor.fetchall()
+    players = conn.execute("SELECT puuid, tier FROM player WHERE match_ids_fetched_at IS NULL ORDER BY puuid").fetchall()
     random.Random(seed).shuffle(players)
 
     for visited, (puuid, tier) in enumerate(players, start=1):
         if queued >= target:
             break
-        for match_id in client.match_ids(puuid, since_epoch, per_player, end_time=until_epoch):
-            if not match_id.startswith(prefix):
-                continue
-            cursor.execute(
-                """
-                INSERT INTO stg.match_queue (match_id, source_puuid, source_tier)
-                SELECT %s, %s, %s
-                WHERE NOT EXISTS (SELECT 1 FROM stg.match_queue WHERE match_id = %s)
-                """,
-                (match_id, puuid, tier, match_id),
-            )
-            queued += cursor.rowcount
-        cursor.execute("UPDATE stg.player SET match_ids_fetched_at = SYSUTCDATETIME() WHERE puuid = %s", (puuid,))
+        match_ids = [m for m in client.match_ids(puuid, since_epoch, per_player, end_time=until_epoch)
+                     if m.startswith(prefix)]
+        with conn:
+            for match_id in match_ids:
+                queued += conn.execute(
+                    "INSERT OR IGNORE INTO match_queue (match_id, source_puuid, source_tier) VALUES (?, ?, ?)",
+                    (match_id, puuid, tier),
+                ).rowcount
+            conn.execute("UPDATE player SET match_ids_fetched_at = CURRENT_TIMESTAMP WHERE puuid = ?", (puuid,))
         if visited % 25 == 0:
             print(f"  {visited} players visited, {queued}/{target} matches queued")
 
@@ -99,50 +92,6 @@ def queue_matches(
     return queued
 
 
-def patch_of(version: str) -> str:
-    """'16.19.1' (a Data Dragon or game version) -> '16.19', the patch as fact.match stores it."""
-    return ".".join(version.split(".")[:2])
-
-
-def collection_plan(conn, hold_patch: str | None = None) -> tuple[str, int, int | None, int, int] | None:
-    """The patch to collect (`hold_patch`, or else the newest in etl.patch), the time its games
-    start and end (epoch seconds: the next patch's start, or None while it's the newest), its
-    matches loaded so far, and matches on their way (queued, or downloaded but not loaded).
-    None if no patch is set up."""
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT TOP 1 p.patch, DATEDIFF_BIG(SECOND, '1970-01-01', p.started_utc),
-               (SELECT DATEDIFF_BIG(SECOND, '1970-01-01', MIN(n.started_utc))
-                FROM etl.patch AS n WHERE n.started_utc > p.started_utc),
-               p.matches
-        FROM etl.v_patch_progress AS p
-        WHERE p.status <> 'retired' AND (%s IS NULL OR p.patch = %s)
-        ORDER BY p.started_utc DESC
-        """,
-        (hold_patch, hold_patch),
-    )
-    row = cursor.fetchone()
-    if row is None:
-        return None
-    patch, since_epoch, until_epoch, matches = row
-    # Matches already on their way: queued but not downloaded, or downloaded but not loaded yet.
-    cursor.execute(
-        """
-        SELECT (SELECT COUNT(*) FROM stg.match_queue WHERE status = 'pending')
-             + (SELECT COUNT(*) FROM stg.match_raw AS r
-                WHERE NOT EXISTS (SELECT 1 FROM fact.match AS m WHERE m.match_id = r.match_id))
-        """
-    )
-    in_progress = cursor.fetchone()[0]
-    return patch, int(since_epoch), None if until_epoch is None else int(until_epoch), matches, in_progress
-
-
-def _compress(text: str) -> bytes:
-    """GZIP of UTF-16 text: T-SQL's CAST(DECOMPRESS(x) AS NVARCHAR(MAX)) turns it back into text."""
-    return gzip.compress(text.encode("utf-16-le"))
-
-
 def _print_progress(done: int, total: int, started: float, noun: str) -> None:
     if done % 50 == 0 or done == total:
         remaining = (time.monotonic() - started) / done * (total - done)
@@ -150,10 +99,9 @@ def _print_progress(done: int, total: int, started: float, noun: str) -> None:
 
 
 def fetch_matches(client: RiotClient, conn, limit: int | None = None) -> int:
-    """Download pending matches into stg.match_raw, GZIP-compressed (see _compress)."""
-    cursor = conn.cursor()
-    cursor.execute("SELECT match_id FROM stg.match_queue WHERE status = 'pending' ORDER BY queued_at, match_id")
-    pending = [row[0] for row in cursor.fetchall()]
+    """Download pending matches into match_raw, GZIP-compressed."""
+    pending = [row[0] for row in conn.execute(
+        "SELECT match_id FROM match_queue WHERE status = 'pending' ORDER BY queued_at, match_id")]
     if limit is not None:
         pending = pending[:limit]
 
@@ -166,54 +114,46 @@ def fetch_matches(client: RiotClient, conn, limit: int | None = None) -> int:
                 raise RiotApiError(f"{match_id}: response has no 'info' block")
         except RiotApiError as error:
             print(f"  {error}")
-            cursor.execute(
-                """
-                UPDATE stg.match_queue
-                SET attempts = attempts + 1,
-                    status = CASE WHEN attempts + 1 >= %s THEN 'failed' ELSE 'pending' END,
-                    updated_at = SYSUTCDATETIME()
-                WHERE match_id = %s
-                """,
-                (MAX_FETCH_ATTEMPTS, match_id),
-            )
+            with conn:
+                conn.execute(
+                    """
+                    UPDATE match_queue
+                    SET attempts = attempts + 1,
+                        status = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'pending' END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE match_id = ?
+                    """,
+                    (MAX_FETCH_ATTEMPTS, match_id),
+                )
             continue
 
-        if text is None:  # 404: match no longer available
-            status = "skipped"
-        else:
-            cursor.execute(
-                """
-                INSERT INTO stg.match_raw (match_id, payload_gz)
-                SELECT %s, %s
-                WHERE NOT EXISTS (SELECT 1 FROM stg.match_raw WHERE match_id = %s)
-                """,
-                (match_id, _compress(text), match_id),
-            )
-            status = "done"
-            fetched += 1
-        cursor.execute(
-            "UPDATE stg.match_queue SET status = %s, updated_at = SYSUTCDATETIME() WHERE match_id = %s",
-            (status, match_id),
-        )
+        with conn:
+            if text is None:  # 404: match no longer available
+                status = "skipped"
+            else:
+                conn.execute("INSERT OR IGNORE INTO match_raw (match_id, payload_gz) VALUES (?, ?)",
+                             (match_id, compress(text)))
+                status = "done"
+                fetched += 1
+            conn.execute("UPDATE match_queue SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE match_id = ?",
+                         (status, match_id))
         _print_progress(done, len(pending), started, "matches")
     return fetched
 
 
 def fetch_timelines(client: RiotClient, conn, limit: int | None = None) -> int:
     """Download the timeline of every fetched match that doesn't have one yet. The timeline holds
-    the item purchase order. stg.timeline_raw doubles as the queue: no row, or
-    status 'pending', means still to fetch."""
-    cursor = conn.cursor()
-    cursor.execute(
+    the item purchase order. timeline_raw doubles as the queue: no row, or status 'pending',
+    means still to fetch."""
+    pending = [row[0] for row in conn.execute(
         """
         SELECT r.match_id
-        FROM stg.match_raw AS r
-        LEFT JOIN stg.timeline_raw AS t ON t.match_id = r.match_id
+        FROM match_raw AS r
+        LEFT JOIN timeline_raw AS t ON t.match_id = r.match_id
         WHERE t.match_id IS NULL OR t.status = 'pending'
         ORDER BY r.match_id
         """
-    )
-    pending = [row[0] for row in cursor.fetchall()]
+    )]
     if limit is not None:
         pending = pending[:limit]
 
@@ -226,30 +166,29 @@ def fetch_timelines(client: RiotClient, conn, limit: int | None = None) -> int:
                 raise RiotApiError(f"{match_id}: timeline has no 'frames' block")
         except RiotApiError as error:
             print(f"  {error}")
-            cursor.execute(
-                """
-                MERGE stg.timeline_raw AS t
-                USING (SELECT %s AS match_id) AS s ON t.match_id = s.match_id
-                WHEN MATCHED THEN UPDATE SET attempts = t.attempts + 1,
-                     status = CASE WHEN t.attempts + 1 >= %s THEN 'failed' ELSE 'pending' END,
-                     updated_at = SYSUTCDATETIME()
-                WHEN NOT MATCHED THEN INSERT (match_id, status, attempts) VALUES (s.match_id, 'pending', 1);
-                """,
-                (match_id, MAX_FETCH_ATTEMPTS),
-            )
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO timeline_raw (match_id, status, attempts) VALUES (?, 'pending', 1)
+                    ON CONFLICT (match_id) DO UPDATE SET attempts = attempts + 1,
+                        status = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'pending' END,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (match_id, MAX_FETCH_ATTEMPTS),
+                )
             continue
 
         # None means 404: the timeline is no longer available.
-        status, payload = ("skipped", None) if text is None else ("done", _compress(text))
-        cursor.execute(
-            """
-            MERGE stg.timeline_raw AS t
-            USING (SELECT %s AS match_id, %s AS status, %s AS payload_gz) AS s ON t.match_id = s.match_id
-            WHEN MATCHED THEN UPDATE SET status = s.status, payload_gz = s.payload_gz, updated_at = SYSUTCDATETIME()
-            WHEN NOT MATCHED THEN INSERT (match_id, status, payload_gz) VALUES (s.match_id, s.status, s.payload_gz);
-            """,
-            (match_id, status, payload),
-        )
+        status, payload = ("skipped", None) if text is None else ("done", compress(text))
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO timeline_raw (match_id, status, payload_gz) VALUES (?, ?, ?)
+                ON CONFLICT (match_id) DO UPDATE SET status = excluded.status, payload_gz = excluded.payload_gz,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (match_id, status, payload),
+            )
         fetched += status == "done"
         _print_progress(done, len(pending), started, "timelines")
     return fetched

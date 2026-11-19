@@ -1,0 +1,11 @@
+-- Blue side against red side. Every match has one winner, so the two win rates add up to 1.
+CREATE OR REPLACE TABLE riot_mart.side_win_rate AS
+SELECT m.patch,
+       IF(p.team_id = 100, 'Blue', 'Red')                                  AS side,
+       COUNT(DISTINCT m.match_id)                                          AS games,
+       COUNT(DISTINCT IF(p.win, m.match_id, NULL))                         AS wins,
+       COUNT(DISTINCT IF(p.win, m.match_id, NULL)) / COUNT(DISTINCT m.match_id) AS win_rate,
+       1.96 * SQRT(0.25 / COUNT(DISTINCT m.match_id))                      AS win_rate_moe
+FROM riot_mart.valid_match AS m
+JOIN riot_fact.match_participant AS p ON p.match_id = m.match_id
+GROUP BY m.patch, p.team_id;

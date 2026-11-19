@@ -1,1 +1,1 @@
-"""Riot Games API -> SQL Server -> champion and item meta."""
+"""Riot Games API -> BigQuery -> champion and item meta."""

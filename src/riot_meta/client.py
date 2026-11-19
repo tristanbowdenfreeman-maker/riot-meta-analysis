@@ -121,7 +121,7 @@ class RiotClient:
         return response.json() if response else []
 
     def match_json(self, match_id: str) -> str | None:
-        """match-v5: the full match as raw JSON text (stored unparsed in stg.match_raw)."""
+        """match-v5: the full match as raw JSON text (stored unparsed in the local store)."""
         response = self._get(self._region_host, f"/lol/match/v5/matches/{match_id}")
         return response.text if response else None
 

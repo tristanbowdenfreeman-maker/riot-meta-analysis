@@ -15,64 +15,69 @@ Players are found on the ranked ladder and visited in a random (seeded) order. O
 of matches is taken from each player per visit (`--per-player`, 20 in `scripts/collect.sh`), so no
 single player dominates the sample.
 
-## Why SQL Server, and why the JSON is parsed in T-SQL
+## Why BigQuery, and where the JSON lives
 
-I wanted the modelling to be real T-SQL, the SQL most analyst jobs ask for. SQL Server has no Mac
-version, so it runs in Docker (`docker-compose.yml`).
+The model and every stat on the site are BigQuery SQL. It runs on the free sandbox, which needs no
+billing account but allows no DML (`INSERT`, `UPDATE`, `DELETE`, `MERGE`) and expires tables after
+60 days. So:
 
-Python only downloads data. Each match is stored exactly as the API returned it (compressed) in
-`stg.match_raw`, and stored procedures parse it with `OPENJSON` into the fact tables. Keeping the
-raw JSON means I can change the model and rebuild it without calling the API again
-(`EXEC etl.usp_reset_facts`, then `python -m riot_meta transform`).
+- Rows go in with **load jobs**, which are free and append whole batches.
+- Rows come out by **rebuilding the table without them** (`CREATE OR REPLACE TABLE ... AS SELECT`).
+- Each build pushes every table's expiry back, so the fact tables never lapse.
+- Every query has a cap on the bytes it may scan (`BQ_MAX_GB_BILLED`), so a mistake fails instead
+  of using up the free 1 TB a month. The marts are rebuilt once a day, which scans a few GB.
 
-Every load is incremental: a procedure only picks up matches that aren't in its table yet, in
-batches that commit one at a time.
+The raw JSON stays on the laptop, in a SQLite store (`data/riot.sqlite`), gzipped exactly as the
+API returned it, with the download queue and the patch table. Python parses it
+(`src/riot_meta/parse.py`) and loads the rows. Keeping the raw JSON means I can change the model
+and reload it without calling the API again.
+
+Every load is incremental: only matches not loaded yet are picked up, 2,000 at a time. BigQuery
+can't load several tables in one transaction, so each batch is written down in the store first; if
+a run stops half-way, the next one takes that batch back out of BigQuery and loads it again.
 
 ## One patch at a time
 
-`etl.patch` tracks which patch the site shows (`live`) and which is being filled (`collecting`).
+The store's `patch` table (copied to `riot_etl.patch`) tracks which patch the site shows (`live`) and which is being filled (`collecting`).
 
 1. Each round, `python -m riot_meta patch` checks Data Dragon for a new patch. A new one is added
-   as `collecting` (`etl.usp_start_patch`), and only games played since then are queued.
-2. The collector queues games until the patch has `MATCHES_PER_PATCH` valid matches
-   (`etl.v_patch_progress`), then stops and checks for a new patch every hour. `HOLD_PATCH` keeps
+   as `collecting`, and only games played since then are queued.
+2. The collector queues games until the patch has `MATCHES_PER_PATCH` valid matches,
+   then stops and checks for a new patch every hour. `HOLD_PATCH` keeps
    it on one patch instead, taking only games played before the next patch started.
-3. The site keeps showing the old patch: `mart.v_valid_match` only lets the live patch through, so
-   every view ignores the new one until it's ready.
-4. Once the new patch reaches 30,000 (`MATCHES_TO_GO_LIVE`), `etl.usp_promote_patch` makes it live and
-   `etl.usp_delete_retired_patches` deletes the old patch's raw JSON and fact rows, 1,000 matches
-   per transaction.
+3. The site keeps showing the old patch: `riot_mart.valid_match` only lets the live patch through, so
+   every mart ignores the new one until it's ready.
+4. Once the new patch reaches 30,000 (`MATCHES_TO_GO_LIVE`), it goes live and the old patch's fact
+   rows are rebuilt out of BigQuery, then its raw JSON is deleted from the store.
 
-So the database never holds more than two patches, and the site never shows a patch on a handful
+So the store and BigQuery never hold more than two patches, and the site never shows a patch on a handful
 of games. If another patch comes out before the new one is full, the
 unfinished one is dropped and collection moves on.
 
 ## Running on a laptop
 
-- SQL Server runs in Docker capped at 2 CPU cores and 3 GB of memory (`docker-compose.yml`), and
-  its cache at 2 GB (`sql/0_setup/03_server_settings.sql`).
-- Simple recovery mode, so the transaction log is reused instead of growing forever.
+- No database server runs locally: the store is one SQLite file, and the heavy SQL runs in
+  BigQuery.
 - The collector runs at low CPU priority, and the Riot API rate limits (`RIOT_RATE_LIMITS`) set
   how fast it downloads, whatever the key.
 
 ## The tables
 
-| Schema | What's in it | Loaded by |
+| Where | What's in it | Loaded by |
 |---|---|---|
-| `stg` | Raw API responses and the download queue | Python |
-| `dim` | Champion, item, rune and summoner spell names from Data Dragon | `etl.usp_load_ddragon` |
-| `fact` | Matches, player records, items, runes, bans | `etl.usp_load_matches` |
-| `fact` | Shop events from the timelines | `etl.usp_load_timelines` |
-| `fact` | Team objectives; gold at 10/15/20/25 minutes | `etl.usp_load_objectives`, `etl.usp_load_frames` |
-| `mart` | One view per table on the website | views |
-| `etl` | The procedures above, the data checks, and `etl.patch` | |
+| SQLite store | Raw API responses, the download queue and the patch table | Python |
+| `riot_dim` | Champion, item, rune and summoner spell names from Data Dragon | `ddragon.py` |
+| `riot_fact` | Matches, player records, items, runes, bans, team objectives | `transform.py` (matches) |
+| `riot_fact` | Shop events, gold at 10/15/20/25 minutes, skill order | `transform.py` (timelines) |
+| `riot_mart` | One table per table on the website | `sql/2_marts`, rebuilt by `build` |
+| `riot_etl` | `patch`, copied from the store | `patches.py` |
 
-The main fact table, `fact.match_participant`, has one row per player per match (10 per match).
+The main fact table, `riot_fact.match_participant`, has one row per player per match (10 per match).
 
 ## Definitions
 
 - **Valid match**: ranked solo/duo on EUW lasting at least 5 minutes. Shorter games are remakes
-  and are left out everywhere (`mart.v_valid_match`).
+  and are left out everywhere (`riot_mart.valid_match`).
 - **Patch**: the first two parts of the game version: `16.19.712.3456` is patch `16.19`.
 - **Role**: Riot's `teamPosition`: TOP, JUNGLE, MIDDLE, BOTTOM or UTILITY (support).
 - **Win rate**: wins / games for a champion in a role.
@@ -88,8 +93,8 @@ The main fact table, `fact.match_participant`, has one row per player per match 
 A match only lists the items held at the end. The order they were bought in comes from a second
 API call per match, the timeline. `fact.item_event` keeps its purchases, sales and undos, and:
 
-- `mart.v_item_purchase` drops purchases that were undone.
-- `mart.v_completed_item_order` numbers each player's completed items 1st, 2nd, 3rd...
+- `riot_mart.item_purchase` drops purchases that were undone.
+- `riot_mart.completed_item_order` numbers each player's completed items 1st, 2nd, 3rd...
 - **Starter items**: everything bought in the first 90 seconds, except the trinket.
 - **Core items**: the three items most often finished 1st, 2nd or 3rd. Exact three-item orders
   split the games into too many small groups, so I count each item wherever it lands in the first
@@ -97,7 +102,7 @@ API call per match, the timeline. `fact.item_event` keeps its purchases, sales a
 - **After the core**: every other finished item. It shows no win rate, because only longer games
   get that far.
 
-Build views only use matches whose timeline has loaded, so a missing timeline never looks like a
+Build tables only use matches whose timeline has loaded, so a missing timeline never looks like a
 player who bought nothing.
 
 ## Ranking the tier list without small-sample luck
@@ -116,7 +121,7 @@ extra games at 50%.
 4. `prior_games = 0.25 / real variance`.
 
 At 3,000 matches this came to about 255 games, so the 38–18 record counts as 53.2% while the
-211–153 record only falls to 54.7%. It's worked out again on every export, and the site shows the
+211–153 record only falls to 54.7%. It's worked out again on every build, and the site shows the
 current value.
 
 Tiers are cut by rank within each role (OP = top 5%, then 1 to 5). A champion needs a 1%+ pick
@@ -138,7 +143,7 @@ better team tends to get the objectives, kills and gold as well.
 
 ## Data checks
 
-`sql/5_checks` is one view with a row per check (every match has 10 players, exactly one winning team,
+`sql/3_checks` is one query with a row per check (every match has 10 players, exactly one winning team,
 no objective taken first by both teams, and so on). `python -m riot_meta check` fails if a
 blocking check fails, and the collector only publishes when they all pass.
 

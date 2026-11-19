@@ -1,4 +1,4 @@
-// Player Behaviour Analysis: reads the JSON exported from the SQL Server mart views (site/data) and renders
+// Player Behaviour Analysis: reads the JSON exported from the BigQuery mart tables (site/data) and renders
 // three pages: the insights (#/ or #/insights), the tier list (#/tiers or #/role/TOP) and a champion
 // page (#/champion/Gangplank/TOP). Insights opens first: it's the analysis the project exists for.
 
@@ -219,7 +219,7 @@ function renderTierList(role) {
         <p>Win, pick and ban rates for every champion in Emerald+ solo/duo on EUW, from ${plural(db.matches, "ranked match", "ranked matches")}.</p>
         <a class="cta" href="#/insights">
           <span class="cta__label">See the analysis <span aria-hidden="true">&rarr;</span></span>
-          <span class="cta__sub">What wins games: objectives, gold leads and bans, modelled in T-SQL</span>
+          <span class="cta__sub">What wins games: objectives, gold leads and bans, modelled in BigQuery SQL</span>
         </a>
       </div>
       ${kpiTriangle(db.volume)}
@@ -1230,8 +1230,8 @@ async function renderInsights(ticket) {
         <h1>Ranked match<br>analysis</h1>
         <p>I built this dashboard while I was playing League of Legends, to test my data and software skills and to
           make better decisions in my own games. I don't play anymore, but I still enjoy maintaining it. Python pulls ranked games
-          (Emerald+ solo/duo, EUW) from the Riot Games API and SQL Server models them. Every figure below comes from a
-          T-SQL view that has to pass its data checks before it's published. So far that's ${num(db.matches)} games
+          (Emerald+ solo/duo, EUW) from the Riot Games API and BigQuery models them. Every figure below comes from a
+          SQL mart table that has to pass its data checks before it's published. So far that's ${num(db.matches)} games
           from patch ${esc(patchName(db.patch))}.</p>
       </div>
       ${kpiTriangle(vol)}
@@ -1379,7 +1379,7 @@ async function renderInsights(ticket) {
       <div class="dumbbell-axis" aria-hidden="true"><span></span><span class="axis-ticks">${axisTicks}</span><span></span></div>
       <div class="dumbbells">${dumbbells()}</div>
       <p class="method"><span class="dot-key raw"></span> Raw win rate, <span class="dot-key adjusted"></span> after adding
-        ${num(prior)} games at 50%. The dashed line is 50%. I didn't pick ${num(prior)} myself. On every export, SQL Server
+        ${num(prior)} games at 50%. The dashed line is 50%. I didn't pick ${num(prior)} myself. On every build, BigQuery
         estimates how much of the spread in champions' win rates is real rather than chance and sets the number from
         that (empirical Bayes).</p>
     </section>
@@ -1417,7 +1417,7 @@ async function renderInsights(ticket) {
       <div class="card-head">
         <div>
           <h2>How it's built</h2>
-          <p class="lede">I collect the games with Python and model them in SQL Server, and every figure on this site comes from a T-SQL view.</p>
+          <p class="lede">I collect the games with Python and model them in BigQuery, and every figure on this site comes from a SQL mart table.</p>
         </div>
       </div>
       <ol class="flow">
@@ -1428,18 +1428,18 @@ async function renderInsights(ticket) {
         </li>
         <li style="--i: 1">
           <span class="flow-figure" data-count="${vol.matches + vol.timelines}" data-format="num">${num(vol.matches + vol.timelines)}</span>
-          <span class="flow-label">SQL Server staging</span>
+          <span class="flow-label">Raw store</span>
           <span>Games and timelines, each stored as it arrived, as compressed raw JSON.</span>
         </li>
         <li style="--i: 2">
           <span class="flow-figure" data-count="${vol.fact_rows}" data-format="compact">${KPI_FORMAT.compact(vol.fact_rows)}</span>
-          <span class="flow-label">T-SQL ETL</span>
-          <span>Fact rows parsed with OPENJSON into a star schema of match, player, item and rune facts.</span>
+          <span class="flow-label">BigQuery load</span>
+          <span>Fact rows parsed from the JSON and loaded into a star schema of match, player, item and rune facts.</span>
         </li>
         <li style="--i: 3">
           <span class="flow-figure" data-count="${vol.mart_views}" data-format="num">${num(vol.mart_views)}</span>
-          <span class="flow-label">Mart views</span>
-          <span>T-SQL views compute every rate, tier and build on this site, with window functions.</span>
+          <span class="flow-label">Mart tables</span>
+          <span>BigQuery SQL computes every rate, tier and build on this site, with window functions.</span>
         </li>
         <li style="--i: 4">
           <span class="flow-figure" data-count="${checks.length}" data-format="num">${num(checks.length)}</span>

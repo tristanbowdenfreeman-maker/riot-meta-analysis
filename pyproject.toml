@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "riot-meta"
 version = "0.1.0"
-description = "League of Legends champion and item meta from the Riot Games API, modelled in T-SQL"
+description = "League of Legends champion and item meta from the Riot Games API, modelled in BigQuery"
 requires-python = ">=3.12"
 
 [tool.setuptools.packages.find]

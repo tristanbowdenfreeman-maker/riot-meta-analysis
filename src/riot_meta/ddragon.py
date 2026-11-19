@@ -5,16 +5,11 @@ These files are public CDN downloads and do not count against the API rate limit
 
 import requests
 
-from riot_meta.config import Settings
-from riot_meta.db import connect
+from riot_meta.parse import parse_ddragon
+from riot_meta.warehouse import Warehouse
 
 BASE_URL = "https://ddragon.leagueoflegends.com"
-DATASETS = {
-    "champion": "champion.json",
-    "item": "item.json",
-    "runesReforged": "runesReforged.json",
-    "summoner": "summoner.json",
-}
+FILES = ("champion.json", "item.json", "runesReforged.json", "summoner.json")
 
 
 def latest_version() -> str:
@@ -23,23 +18,17 @@ def latest_version() -> str:
     return response.json()[0]
 
 
-def load(settings: Settings, version: str | None = None, language: str = "en_GB") -> str:
-    """Store the four Data Dragon files in stg.ddragon_raw, then rebuild the dim tables from them."""
+def load(warehouse: Warehouse, version: str | None = None, language: str = "en_GB") -> str:
+    """Download the four Data Dragon files and replace every dim table with their contents."""
     version = version or latest_version()
-    with connect(settings) as conn:
-        cursor = conn.cursor()
-        for dataset, filename in DATASETS.items():
-            response = requests.get(f"{BASE_URL}/cdn/{version}/data/{language}/{filename}", timeout=60)
-            response.raise_for_status()
-            cursor.execute(
-                """
-                INSERT INTO stg.ddragon_raw (dataset, ddragon_version, payload)
-                SELECT %s, %s, %s
-                WHERE NOT EXISTS (SELECT 1 FROM stg.ddragon_raw WHERE dataset = %s AND ddragon_version = %s)
-                """,
-                (dataset, version, response.text, dataset, version),
-            )
-        cursor.execute("EXEC etl.usp_load_ddragon @ddragon_version = %s", (version,))
-        _, champions, items, runes, spells = cursor.fetchone()
-    print(f"Data Dragon {version}: {champions} champions, {items} items, {runes} runes, {spells} summoner spells")
+    texts = []
+    for filename in FILES:
+        response = requests.get(f"{BASE_URL}/cdn/{version}/data/{language}/{filename}", timeout=60)
+        response.raise_for_status()
+        texts.append(response.text)
+    tables = parse_ddragon(version, *texts)
+    for table, rows in tables.items():
+        warehouse.load(f"riot_dim.{table}", rows, replace=True)
+    print(f"Data Dragon {version}: {len(tables['champion'])} champions, {len(tables['item'])} items, "
+          f"{len(tables['rune'])} runes, {len(tables['summoner_spell'])} summoner spells")
     return version

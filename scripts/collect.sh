@@ -6,10 +6,12 @@
 #      while the site keeps showing the current one.
 #   2. Queues more EUW matches of the patch being collected, up to MATCHES_PER_PATCH (30,000 by
 #      default, set in .env). Once the patch is full it just checks for a new patch every hour.
-#   3. Downloads the matches and timelines, loads them into the fact tables, and runs `patch`
-#      again: a new patch with a full sample goes live and the old patch's data is deleted.
-#   4. Runs the data checks and, if they pass, re-exports site/data and publishes it to the
-#      portfolio (scripts/publish.sh).
+#   3. Downloads the matches and timelines into the local store, loads them into BigQuery, and
+#      runs `patch` again: a new patch with a full sample goes live and the old patch's data is
+#      deleted.
+#   4. Once a day: rebuilds the BigQuery marts, runs the data checks and, if they pass,
+#      re-exports site/data and publishes it to the portfolio (scripts/publish.sh). Daily keeps
+#      the BigQuery scanning far inside the free 1 TB a month.
 #
 # Every stage resumes where it stopped, so the script can be killed and restarted at any time.
 # When the Riot key expires it waits and retries every 5 minutes: put a new key in .env and it
@@ -18,12 +20,11 @@
 # Pacing, so a faster Riot key never means a harder-working Mac:
 #   - At most $MAX_PER_HOUR matches an hour, however fast the key allows: a round of $STEP
 #     matches takes at least STEP / MAX_PER_HOUR hours, resting if it finished early.
-#   - The site data is re-exported at most every $EXPORT_EVERY minutes (the slowest stage).
+#   - The site data is re-exported at most every $EXPORT_EVERY minutes (a day by default).
 #   - Before each round and each heavy stage it waits while the Mac is busy (5-minute load
 #     average over $MAX_LOAD), short of memory (under $MIN_FREE_MEM% free) or disk (under
 #     $MIN_FREE_GB GB), or on battery below $MIN_BATTERY%. These trip well before the Mac gets
 #     hot; macOS's own thermal warning is only a last resort.
-#   - The database is capped at 2 CPUs and 3 GB of memory (docker-compose.yml).
 #
 #   scripts/collect.sh                                            # in the foreground
 #   nohup caffeinate -i scripts/collect.sh >> collect.log 2>&1 &  # in the background
@@ -36,7 +37,7 @@ STEP=${STEP:-1000}
 PAGES=${PAGES:-2}            # ladder pages per division already discovered
 PER_PLAYER=${PER_PLAYER:-20} # newest matches taken from each player per visit
 MAX_PER_HOUR=${MAX_PER_HOUR:-1500}  # matches an hour at most
-EXPORT_EVERY=${EXPORT_EVERY:-60}    # minutes between site exports at least
+EXPORT_EVERY=${EXPORT_EVERY:-1440}  # minutes between site exports at least (a day)
 MAX_LOAD=${MAX_LOAD:-6}             # pause above this 5-minute load average (8 cores)
 MIN_FREE_MEM=${MIN_FREE_MEM:-20}    # pause below this much free memory (%)
 MIN_FREE_GB=${MIN_FREE_GB:-25}      # pause below this much free disk
@@ -51,7 +52,7 @@ stamp() { printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M')" "$*"; }
 # Run one pipeline command, keeping its output in $LOG as well as on screen.
 run() { .venv/bin/python -u -m riot_meta "$@" 2>&1 | tee "$LOG"; return "${PIPESTATUS[0]}"; }
 
-# Why the last command failed: wait for a new key, or wait out a network or database blip.
+# Why the last command failed: wait for a new key, or wait out a network or BigQuery blip.
 wait_after_failure() {
   if grep -q "RiotAuthError" "$LOG"; then
     stamp "The Riot key has expired. Put a new RIOT_API_KEY in .env; retrying every 5 minutes."
@@ -97,6 +98,25 @@ wait_until_safe() {
   done
 }
 
+# Rebuild the marts, check them and publish site/data, if the last export is old enough.
+maybe_export() {
+  if [ $(( $(date +%s) - LAST_EXPORT )) -lt $(( EXPORT_EVERY * 60 )) ]; then
+    stamp "Exported less than $EXPORT_EVERY minutes ago; the site updates after a later round."
+    return
+  fi
+  wait_until_safe
+  run build || { wait_after_failure; return; }
+  if run check; then
+    if run export >/dev/null; then
+      LAST_EXPORT=$(date +%s)
+      stamp "Exported site/data"
+      scripts/publish.sh || stamp "Publishing to the portfolio failed; it will retry next round."
+    fi
+  else
+    stamp "A blocking data check failed, so site/data was not updated. Collection carries on."
+  fi
+}
+
 while true; do
   wait_until_safe
   ROUND_START=$(date +%s)
@@ -104,6 +124,7 @@ while true; do
   stamp "Queueing up to $STEP more matches"
   run queue --more "$STEP" --per-player "$PER_PLAYER" || { wait_after_failure; continue; }
   if grep -q "is full" "$LOG"; then
+    maybe_export
     stamp "This patch has its full sample. Checking for a new patch again in an hour."
     sleep 3600
     continue
@@ -120,18 +141,7 @@ while true; do
   wait_until_safe
   run transform || { wait_after_failure; continue; }
   run patch || { wait_after_failure; continue; }   # goes live once the new patch is full
-  if [ $(( $(date +%s) - LAST_EXPORT )) -lt $(( EXPORT_EVERY * 60 )) ]; then
-    stamp "Exported less than $EXPORT_EVERY minutes ago; the site updates after a later round."
-  elif run check; then
-    wait_until_safe
-    if run export >/dev/null; then
-      LAST_EXPORT=$(date +%s)
-      stamp "Exported site/data"
-      scripts/publish.sh || stamp "Publishing to the portfolio failed; it will retry next round."
-    fi
-  else
-    stamp "A blocking data check failed, so site/data was not updated. Collection carries on."
-  fi
+  maybe_export
   run status
   # Keep to MAX_PER_HOUR: a round of STEP matches takes at least this long.
   wait=$(( STEP * 3600 / MAX_PER_HOUR - ($(date +%s) - ROUND_START) ))

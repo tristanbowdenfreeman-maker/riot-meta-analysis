@@ -15,11 +15,10 @@ class Settings:
     platform: str
     region: str
     rate_limits: list[tuple[int, float]]
-    mssql_host: str
-    mssql_port: int
-    mssql_user: str
-    mssql_password: str
-    mssql_database: str
+    store_path: Path
+    bq_project: str
+    bq_location: str
+    bq_max_gb_billed: int
     matches_per_patch: int
     matches_to_go_live: int
     hold_patch: str | None
@@ -36,19 +35,20 @@ def parse_rate_limits(spec: str) -> list[tuple[int, float]]:
 
 def load_settings() -> Settings:
     load_dotenv(PROJECT_ROOT / ".env")
-    password = os.getenv("MSSQL_SA_PASSWORD", "")
-    if not password:
-        raise SystemExit("MSSQL_SA_PASSWORD is not set in .env")
+    project = os.getenv("BQ_PROJECT", "")
+    if not project:
+        raise SystemExit("BQ_PROJECT is not set in .env")
     return Settings(
         riot_api_key=os.getenv("RIOT_API_KEY", ""),
         platform=os.getenv("RIOT_PLATFORM", "euw1"),
         region=os.getenv("RIOT_REGION", "europe"),
         rate_limits=parse_rate_limits(os.getenv("RIOT_RATE_LIMITS", "20:1,100:120")),
-        mssql_host=os.getenv("MSSQL_HOST", "localhost"),
-        mssql_port=int(os.getenv("MSSQL_PORT", "1433")),
-        mssql_user=os.getenv("MSSQL_USER", "sa"),
-        mssql_password=password,
-        mssql_database=os.getenv("MSSQL_DATABASE", "RiotMeta"),
+        store_path=PROJECT_ROOT / os.getenv("STORE_PATH", "data/riot.sqlite"),
+        bq_project=project,
+        bq_location=os.getenv("BQ_LOCATION", "EU"),
+        # Any single query that would scan more than this fails instead of running. The free tier
+        # is 1 TB of scanning a month; a full export scans a few GB.
+        bq_max_gb_billed=int(os.getenv("BQ_MAX_GB_BILLED", "20")),
         matches_per_patch=int(os.getenv("MATCHES_PER_PATCH", "30000")),
         # A new patch replaces the live one on the site at this many matches, then keeps
         # growing up to MATCHES_PER_PATCH. Never more than the cap.

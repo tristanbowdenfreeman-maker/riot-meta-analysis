@@ -16,3 +16,6 @@ __pycache__/
 
 # Background collection log
 *.log
+
+# Local store (raw JSON and download queue)
+data/
